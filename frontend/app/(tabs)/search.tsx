@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
 import { TextInput } from '../components/TextInput';
 import { LoadingButton } from '../components/LoadingButton';
 
@@ -34,6 +35,7 @@ export default function SearchScreen() {
   const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
   const filterOptions = [
     { id: 'country', label: 'Country', icon: 'flag-outline' },
@@ -132,6 +134,11 @@ export default function SearchScreen() {
     }
   };
 
+  const handleUserPress = (user: User) => {
+    // Navigate to user profile screen
+    router.push(`/users/profile/${user.id}`);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1a1a2e" />
@@ -204,7 +211,12 @@ export default function SearchScreen() {
             </Text>
 
             {searchResults.map((user) => (
-              <View key={user.id} style={styles.userCard}>
+              <TouchableOpacity
+                key={user.id}
+                style={styles.userCard}
+                onPress={() => handleUserPress(user)}
+                activeOpacity={0.8}
+              >
                 <View style={styles.userInfo}>
                   <View style={styles.avatar}>
                     <Text style={styles.avatarText}>
@@ -242,12 +254,15 @@ export default function SearchScreen() {
 
                 <TouchableOpacity
                   style={styles.connectButton}
-                  onPress={() => sendConnectionRequest(user.id)}
+                  onPress={(e) => {
+                    e.stopPropagation(); // Prevent user card tap
+                    sendConnectionRequest(user.id);
+                  }}
                   activeOpacity={0.8}
                 >
                   <Ionicons name="person-add-outline" size={20} color="#6c5ce7" />
                 </TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         )}
