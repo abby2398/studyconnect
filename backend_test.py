@@ -461,8 +461,8 @@ class BackendTester:
             self.log_result("Send Connection Request", False, error_details=str(e))
             return False
     
-    def _test_get_connection_requests(self):
-        """Test getting connection requests"""
+    def test_connection_response(self):
+        """Test responding to connection requests"""
         if len(self.auth_tokens) < 2:
             return False
             
@@ -471,26 +471,70 @@ class BackendTester:
         headers = {"Authorization": f"Bearer {user2_token}"}
         
         try:
+            # First get the connection requests to find a request ID
             response = self.session.get(f"{API_BASE}/connections/requests", headers=headers, timeout=10)
+            if response.status_code != 200:
+                self.log_result("Connection Response", False, "Failed to get connection requests")
+                return False
+                
+            data = response.json()
+            if not data.get("incoming"):
+                self.log_result("Connection Response", False, "No incoming requests to respond to")
+                return False
+                
+            request_id = data["incoming"][0]["id"]
+            
+            # Accept the connection request
+            response = self.session.post(
+                f"{API_BASE}/connections/respond?request_id={request_id}&action=accept",
+                headers=headers,
+                timeout=10
+            )
             
             if response.status_code == 200:
-                data = response.json()
-                if "incoming" in data and "outgoing" in data:
-                    incoming_count = len(data["incoming"])
-                    self.log_result("Get Connection Requests", True, 
-                                  f"Retrieved connection requests - Incoming: {incoming_count}")
+                response_data = response.json()
+                if "Connection request accepted" in response_data.get("message", ""):
+                    self.log_result("Connection Response", True, 
+                                  "Connection request accepted successfully")
                     return True
                 else:
-                    self.log_result("Get Connection Requests", False, 
-                                  f"Missing request fields: {data}")
+                    self.log_result("Connection Response", False, 
+                                  f"Unexpected response: {response_data}")
                     return False
             else:
-                self.log_result("Get Connection Requests", False, 
+                self.log_result("Connection Response", False, 
                               f"Status: {response.status_code}, Response: {response.text}")
                 return False
                 
         except Exception as e:
-            self.log_result("Get Connection Requests", False, error_details=str(e))
+            self.log_result("Connection Response", False, error_details=str(e))
+            return False
+    
+    def test_email_verification_invalid_token(self):
+        """Test email verification with invalid token"""
+        try:
+            response = self.session.post(
+                f"{API_BASE}/auth/verify-email?token=invalid_token_12345",
+                timeout=10
+            )
+            
+            if response.status_code == 400:
+                data = response.json()
+                if "Invalid or expired verification token" in data.get("detail", ""):
+                    self.log_result("Email Verification (invalid token)", True, 
+                                  "Invalid token correctly rejected")
+                    return True
+                else:
+                    self.log_result("Email Verification (invalid token)", False, 
+                                  f"Wrong error message: {data}")
+                    return False
+            else:
+                self.log_result("Email Verification (invalid token)", False, 
+                              f"Expected 400 status, got {response.status_code}")
+                return False
+                
+        except Exception as e:
+            self.log_result("Email Verification (invalid token)", False, error_details=str(e))
             return False
     
     def run_all_tests(self):
