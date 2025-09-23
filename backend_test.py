@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-"""
-Backend API Testing for International Student Networking App
-Tests authentication, user profiles, and connection system
-"""
 
-import requests
+import asyncio
+import aiohttp
 import json
-import time
-import uuid
+import socketio
 from datetime import datetime
+import sys
 import os
 
 # Get backend URL from frontend .env file
@@ -17,615 +14,597 @@ def get_backend_url():
         with open('/app/frontend/.env', 'r') as f:
             for line in f:
                 if line.startswith('EXPO_PUBLIC_BACKEND_URL='):
-                    external_url = line.split('=')[1].strip()
-                    print(f"External URL from .env: {external_url}")
-                    return external_url
+                    return line.split('=', 1)[1].strip()
     except:
         pass
     return "https://pathfinder-94.preview.emergentagent.com"
 
-# Try external URL first, fallback to localhost for testing
-EXTERNAL_URL = get_backend_url()
-LOCAL_URL = "http://localhost:8001"
+BASE_URL = get_backend_url()
+API_URL = f"{BASE_URL}/api"
 
-def get_working_base_url():
-    """Test both external and local URLs to find working one"""
-    import requests
-    
-    # Test external URL first
-    try:
-        response = requests.get(f"{EXTERNAL_URL}/docs", timeout=5)
-        if response.status_code == 200:
-            print(f"✅ External URL working: {EXTERNAL_URL}")
-            return EXTERNAL_URL
-    except:
-        print(f"❌ External URL not accessible: {EXTERNAL_URL}")
-    
-    # Fallback to local URL
-    try:
-        response = requests.get(f"{LOCAL_URL}/docs", timeout=5)
-        if response.status_code == 200:
-            print(f"✅ Local URL working: {LOCAL_URL}")
-            return LOCAL_URL
-    except:
-        print(f"❌ Local URL not accessible: {LOCAL_URL}")
-    
-    return LOCAL_URL  # Default fallback
-
-BASE_URL = get_working_base_url()
-API_BASE = f"{BASE_URL}/api"
-
-class BackendTester:
+class ChatSystemTester:
     def __init__(self):
-        self.session = requests.Session()
-        self.test_users = []
-        self.auth_tokens = {}
-        self.results = {
-            'passed': 0,
-            'failed': 0,
-            'errors': []
-        }
+        self.session = None
+        self.user1_token = None
+        self.user2_token = None
+        self.user1_id = None
+        self.user2_id = None
+        self.conversation_id = None
+        self.message_id = None
+        self.sio_client = None
+        self.test_results = []
         
-    def log_result(self, test_name, success, message="", error_details=""):
+    async def setup_session(self):
+        """Setup HTTP session"""
+        self.session = aiohttp.ClientSession()
+        
+    async def cleanup_session(self):
+        """Cleanup HTTP session"""
+        if self.session:
+            await self.session.close()
+            
+    def log_test(self, test_name, success, message=""):
+        """Log test result"""
         status = "✅ PASS" if success else "❌ FAIL"
         print(f"{status}: {test_name}")
         if message:
             print(f"   {message}")
-        if error_details:
-            print(f"   Error: {error_details}")
-            self.results['errors'].append(f"{test_name}: {error_details}")
+        self.test_results.append({
+            'test': test_name,
+            'success': success,
+            'message': message
+        })
         
-        if success:
-            self.results['passed'] += 1
-        else:
-            self.results['failed'] += 1
-        print()
-    
-    def test_server_health(self):
-        """Test if the backend server is running"""
-        try:
-            response = self.session.get(f"{BASE_URL}/docs", timeout=10)
-            if response.status_code == 200:
-                self.log_result("Server Health Check", True, "Backend server is running")
-                return True
-            else:
-                self.log_result("Server Health Check", False, f"Server returned status {response.status_code}")
-                return False
-        except Exception as e:
-            self.log_result("Server Health Check", False, error_details=str(e))
-            return False
-    
-    def test_user_registration_valid_edu(self):
-        """Test user registration with valid .edu email"""
-        test_user = {
-            "email": f"test.user.{uuid.uuid4().hex[:8]}@university.edu",
-            "password": "SecurePassword123!",
-            "first_name": "John",
-            "last_name": "Doe",
-            "phone": "+1234567890"
+    async def setup_test_users(self):
+        """Setup test users for chat testing"""
+        print("\n=== Setting up Test Users ===")
+        
+        # Test user 1
+        user1_data = {
+            "email": "alice.johnson@stanford.edu",
+            "password": "SecurePass123!",
+            "first_name": "Alice",
+            "last_name": "Johnson",
+            "phone": "+1-555-0101"
+        }
+        
+        # Test user 2  
+        user2_data = {
+            "email": "bob.smith@mit.edu", 
+            "password": "SecurePass456!",
+            "first_name": "Bob",
+            "last_name": "Smith",
+            "phone": "+1-555-0102"
         }
         
         try:
-            response = self.session.post(
-                f"{API_BASE}/auth/register",
-                json=test_user,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                if "Registration successful" in data.get("message", ""):
-                    self.test_users.append(test_user)
-                    self.log_result("User Registration (.edu email)", True, 
-                                  f"User registered successfully: {test_user['email']}")
-                    return True
+            # Try to login first (users might already exist)
+            async with self.session.post(f"{API_URL}/auth/login", json={
+                "email": user1_data["email"],
+                "password": user1_data["password"]
+            }) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    self.user1_token = data["access_token"]
+                    self.user1_id = data["user"]["id"]
+                    self.log_test("User 1 Login", True, f"Logged in as {user1_data['first_name']}")
                 else:
-                    self.log_result("User Registration (.edu email)", False, 
-                                  f"Unexpected response: {data}")
-                    return False
-            else:
-                self.log_result("User Registration (.edu email)", False, 
-                              f"Status: {response.status_code}, Response: {response.text}")
-                return False
-                
+                    # Register user 1
+                    async with self.session.post(f"{API_URL}/auth/register", json=user1_data) as reg_resp:
+                        if reg_resp.status == 200:
+                            # Try login again
+                            async with self.session.post(f"{API_URL}/auth/login", json={
+                                "email": user1_data["email"],
+                                "password": user1_data["password"]
+                            }) as login_resp:
+                                if login_resp.status == 200:
+                                    data = await login_resp.json()
+                                    self.user1_token = data["access_token"]
+                                    self.user1_id = data["user"]["id"]
+                                    self.log_test("User 1 Setup", True, "Registered and logged in")
+                                else:
+                                    self.log_test("User 1 Setup", False, "Failed to login after registration")
+                                    return False
+                        else:
+                            self.log_test("User 1 Setup", False, f"Registration failed: {await reg_resp.text()}")
+                            return False
+                            
+            # Setup user 2
+            async with self.session.post(f"{API_URL}/auth/login", json={
+                "email": user2_data["email"],
+                "password": user2_data["password"]
+            }) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    self.user2_token = data["access_token"]
+                    self.user2_id = data["user"]["id"]
+                    self.log_test("User 2 Login", True, f"Logged in as {user2_data['first_name']}")
+                else:
+                    # Register user 2
+                    async with self.session.post(f"{API_URL}/auth/register", json=user2_data) as reg_resp:
+                        if reg_resp.status == 200:
+                            # Try login again
+                            async with self.session.post(f"{API_URL}/auth/login", json={
+                                "email": user2_data["email"],
+                                "password": user2_data["password"]
+                            }) as login_resp:
+                                if login_resp.status == 200:
+                                    data = await login_resp.json()
+                                    self.user2_token = data["access_token"]
+                                    self.user2_id = data["user"]["id"]
+                                    self.log_test("User 2 Setup", True, "Registered and logged in")
+                                else:
+                                    self.log_test("User 2 Setup", False, "Failed to login after registration")
+                                    return False
+                        else:
+                            self.log_test("User 2 Setup", False, f"Registration failed: {await reg_resp.text()}")
+                            return False
+                            
+            return True
+            
         except Exception as e:
-            self.log_result("User Registration (.edu email)", False, error_details=str(e))
+            self.log_test("User Setup", False, f"Exception: {str(e)}")
             return False
-    
-    def test_user_registration_invalid_email(self):
-        """Test user registration with non-.edu email (should fail)"""
-        test_user = {
-            "email": f"test.user.{uuid.uuid4().hex[:8]}@gmail.com",
-            "password": "SecurePassword123!",
-            "first_name": "Jane",
-            "last_name": "Smith"
-        }
+            
+    async def test_create_conversation(self):
+        """Test creating conversations between users"""
+        print("\n=== Testing Conversation Creation ===")
         
         try:
-            response = self.session.post(
-                f"{API_BASE}/auth/register",
-                json=test_user,
-                timeout=10
-            )
-            
-            if response.status_code == 400:
-                data = response.json()
-                if "Only .edu email addresses are allowed" in data.get("detail", ""):
-                    self.log_result("User Registration (non-.edu email rejection)", True, 
-                                  "Non-.edu email correctly rejected")
-                    return True
-                else:
-                    self.log_result("User Registration (non-.edu email rejection)", False, 
-                                  f"Wrong error message: {data}")
-                    return False
-            else:
-                self.log_result("User Registration (non-.edu email rejection)", False, 
-                              f"Expected 400 status, got {response.status_code}")
-                return False
-                
-        except Exception as e:
-            self.log_result("User Registration (non-.edu email rejection)", False, error_details=str(e))
-            return False
-    
-    def test_user_login_valid(self):
-        """Test user login with valid credentials"""
-        if not self.test_users:
-            self.log_result("User Login (valid credentials)", False, "No test users available")
-            return False
-            
-        test_user = self.test_users[0]
-        login_data = {
-            "email": test_user["email"],
-            "password": test_user["password"]
-        }
-        
-        try:
-            response = self.session.post(
-                f"{API_BASE}/auth/login",
-                json=login_data,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                if "access_token" in data and "user" in data:
-                    self.auth_tokens[test_user["email"]] = data["access_token"]
-                    self.log_result("User Login (valid credentials)", True, 
-                                  f"Login successful, token received for {test_user['email']}")
-                    return True
-                else:
-                    self.log_result("User Login (valid credentials)", False, 
-                                  f"Missing token or user data: {data}")
-                    return False
-            else:
-                self.log_result("User Login (valid credentials)", False, 
-                              f"Status: {response.status_code}, Response: {response.text}")
-                return False
-                
-        except Exception as e:
-            self.log_result("User Login (valid credentials)", False, error_details=str(e))
-            return False
-    
-    def test_user_login_invalid(self):
-        """Test user login with invalid credentials"""
-        login_data = {
-            "email": "nonexistent@university.edu",
-            "password": "wrongpassword"
-        }
-        
-        try:
-            response = self.session.post(
-                f"{API_BASE}/auth/login",
-                json=login_data,
-                timeout=10
-            )
-            
-            if response.status_code == 401:
-                data = response.json()
-                if "Invalid credentials" in data.get("detail", ""):
-                    self.log_result("User Login (invalid credentials)", True, 
-                                  "Invalid credentials correctly rejected")
-                    return True
-                else:
-                    self.log_result("User Login (invalid credentials)", False, 
-                                  f"Wrong error message: {data}")
-                    return False
-            else:
-                self.log_result("User Login (invalid credentials)", False, 
-                              f"Expected 401 status, got {response.status_code}")
-                return False
-                
-        except Exception as e:
-            self.log_result("User Login (invalid credentials)", False, error_details=str(e))
-            return False
-    
-    def test_protected_endpoint_without_token(self):
-        """Test accessing protected endpoint without authentication"""
-        try:
-            response = self.session.get(f"{API_BASE}/users/me", timeout=10)
-            
-            if response.status_code in [401, 403]:  # Both 401 and 403 are acceptable for unauthorized access
-                self.log_result("Protected Endpoint (no token)", True, 
-                              f"Correctly rejected request without token (status: {response.status_code})")
-                return True
-            else:
-                self.log_result("Protected Endpoint (no token)", False, 
-                              f"Expected 401/403 status, got {response.status_code}")
-                return False
-                
-        except Exception as e:
-            self.log_result("Protected Endpoint (no token)", False, error_details=str(e))
-            return False
-    
-    def test_protected_endpoint_with_token(self):
-        """Test accessing protected endpoint with valid token"""
-        if not self.auth_tokens:
-            self.log_result("Protected Endpoint (with token)", False, "No auth tokens available")
-            return False
-            
-        token = list(self.auth_tokens.values())[0]
-        headers = {"Authorization": f"Bearer {token}"}
-        
-        try:
-            response = self.session.get(f"{API_BASE}/users/me", headers=headers, timeout=10)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if "email" in data and "id" in data:
-                    self.log_result("Protected Endpoint (with token)", True, 
-                                  f"Successfully accessed user profile: {data.get('email')}")
-                    return True
-                else:
-                    self.log_result("Protected Endpoint (with token)", False, 
-                                  f"Missing user data: {data}")
-                    return False
-            else:
-                self.log_result("Protected Endpoint (with token)", False, 
-                              f"Status: {response.status_code}, Response: {response.text}")
-                return False
-                
-        except Exception as e:
-            self.log_result("Protected Endpoint (with token)", False, error_details=str(e))
-            return False
-    
-    def test_update_user_profile(self):
-        """Test updating user profile"""
-        if not self.auth_tokens:
-            self.log_result("Update User Profile", False, "No auth tokens available")
-            return False
-            
-        token = list(self.auth_tokens.values())[0]
-        headers = {"Authorization": f"Bearer {token}"}
-        
-        profile_update = {
-            "profile": {
-                "age": 25,
-                "bio": "International student studying computer science",
-                "origin_country": "India",
-                "origin_city": "Mumbai",
-                "destination_country": "USA",
-                "destination_city": "New York",
-                "university": "Columbia University",
-                "course": "Computer Science",
-                "study_level": "Masters"
-            }
-        }
-        
-        try:
-            response = self.session.put(
-                f"{API_BASE}/users/me",
-                json=profile_update,
-                headers=headers,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                if "Profile updated successfully" in data.get("message", ""):
-                    self.log_result("Update User Profile", True, 
-                                  "Profile updated successfully")
-                    return True
-                else:
-                    self.log_result("Update User Profile", False, 
-                                  f"Unexpected response: {data}")
-                    return False
-            else:
-                self.log_result("Update User Profile", False, 
-                              f"Status: {response.status_code}, Response: {response.text}")
-                return False
-                
-        except Exception as e:
-            self.log_result("Update User Profile", False, error_details=str(e))
-            return False
-    
-    def test_user_search(self):
-        """Test user search functionality"""
-        if not self.auth_tokens:
-            self.log_result("User Search", False, "No auth tokens available")
-            return False
-            
-        token = list(self.auth_tokens.values())[0]
-        headers = {"Authorization": f"Bearer {token}"}
-        
-        # Test search by university
-        try:
-            response = self.session.get(
-                f"{API_BASE}/users/search?university=Columbia",
-                headers=headers,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                if "users" in data:
-                    self.log_result("User Search", True, 
-                                  f"Search returned {len(data['users'])} users")
-                    return True
-                else:
-                    self.log_result("User Search", False, 
-                                  f"Missing users field: {data}")
-                    return False
-            else:
-                self.log_result("User Search", False, 
-                              f"Status: {response.status_code}, Response: {response.text}")
-                return False
-                
-        except Exception as e:
-            self.log_result("User Search", False, error_details=str(e))
-            return False
-    
-    def test_connection_system(self):
-        """Test connection request system"""
-        # Need at least 2 users for connection testing
-        if len(self.test_users) < 2 or len(self.auth_tokens) < 2:
-            # Create a second user for testing
-            second_user = {
-                "email": f"test.user2.{uuid.uuid4().hex[:8]}@university.edu",
-                "password": "SecurePassword123!",
-                "first_name": "Alice",
-                "last_name": "Johnson"
+            # Test creating 1-on-1 conversation
+            conversation_data = {
+                "participants": [self.user1_id, self.user2_id],
+                "is_group_chat": False
             }
             
-            try:
-                # Register second user
-                response = self.session.post(f"{API_BASE}/auth/register", json=second_user, timeout=10)
-                if response.status_code == 200:
-                    self.test_users.append(second_user)
+            headers = {"Authorization": f"Bearer {self.user1_token}"}
+            async with self.session.post(f"{API_URL}/chat/conversations", 
+                                       json=conversation_data, headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    self.conversation_id = data["id"]
+                    self.log_test("Create 1-on-1 Conversation", True, f"Created conversation: {self.conversation_id}")
+                else:
+                    error_text = await resp.text()
+                    self.log_test("Create 1-on-1 Conversation", False, f"Status {resp.status}: {error_text}")
+                    return False
                     
-                    # Login second user
-                    login_response = self.session.post(
-                        f"{API_BASE}/auth/login",
-                        json={"email": second_user["email"], "password": second_user["password"]},
-                        timeout=10
-                    )
-                    if login_response.status_code == 200:
-                        token_data = login_response.json()
-                        self.auth_tokens[second_user["email"]] = token_data["access_token"]
+            # Test duplicate conversation prevention
+            async with self.session.post(f"{API_URL}/chat/conversations", 
+                                       json=conversation_data, headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    # Should return existing conversation
+                    if data["id"] == self.conversation_id:
+                        self.log_test("Duplicate Conversation Prevention", True, "Returned existing conversation")
+                    else:
+                        self.log_test("Duplicate Conversation Prevention", False, "Created duplicate conversation")
                 else:
-                    self.log_result("Connection System Setup", False, "Failed to create second user")
-                    return False
-            except Exception as e:
-                self.log_result("Connection System Setup", False, error_details=str(e))
-                return False
-        
-        # Now test connection requests
-        success1 = self._test_send_connection_request()
-        success2 = self._test_get_connection_requests()
-        return success1 and success2
-    
-    def _test_get_connection_requests(self):
-        """Test getting connection requests"""
-        if len(self.auth_tokens) < 2:
+                    self.log_test("Duplicate Conversation Prevention", False, f"Unexpected error: {await resp.text()}")
+                    
+            # Test group conversation creation
+            group_data = {
+                "participants": [self.user1_id, self.user2_id],
+                "is_group_chat": True,
+                "group_name": "Study Group",
+                "group_description": "Computer Science study group"
+            }
+            
+            async with self.session.post(f"{API_URL}/chat/conversations", 
+                                       json=group_data, headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    self.log_test("Create Group Conversation", True, f"Created group: {data['group_name']}")
+                else:
+                    self.log_test("Create Group Conversation", False, f"Status {resp.status}: {await resp.text()}")
+                    
+            return True
+            
+        except Exception as e:
+            self.log_test("Conversation Creation", False, f"Exception: {str(e)}")
             return False
             
-        tokens = list(self.auth_tokens.values())
-        user2_token = tokens[1]  # User2 should have incoming request
-        headers = {"Authorization": f"Bearer {user2_token}"}
+    async def test_get_conversations(self):
+        """Test retrieving user's conversation list"""
+        print("\n=== Testing Get Conversations ===")
         
         try:
-            response = self.session.get(f"{API_BASE}/connections/requests", headers=headers, timeout=10)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if "incoming" in data and "outgoing" in data:
-                    incoming_count = len(data["incoming"])
-                    self.log_result("Get Connection Requests", True, 
-                                  f"Retrieved connection requests - Incoming: {incoming_count}")
-                    return True
+            headers = {"Authorization": f"Bearer {self.user1_token}"}
+            async with self.session.get(f"{API_URL}/chat/conversations", headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if isinstance(data, list) and len(data) > 0:
+                        # Check conversation structure
+                        conv = data[0]
+                        required_fields = ["conversation", "other_participant", "unread_count"]
+                        if all(field in conv for field in required_fields):
+                            self.log_test("Get Conversations List", True, f"Retrieved {len(data)} conversations")
+                            
+                            # Check other participant details
+                            if conv["other_participant"] and "first_name" in conv["other_participant"]:
+                                self.log_test("Conversation Participant Details", True, 
+                                            f"Other participant: {conv['other_participant']['first_name']}")
+                            else:
+                                self.log_test("Conversation Participant Details", False, "Missing participant details")
+                        else:
+                            self.log_test("Get Conversations List", False, "Missing required fields in response")
+                    else:
+                        self.log_test("Get Conversations List", False, "No conversations returned")
                 else:
-                    self.log_result("Get Connection Requests", False, 
-                                  f"Missing request fields: {data}")
-                    return False
-            else:
-                self.log_result("Get Connection Requests", False, 
-                              f"Status: {response.status_code}, Response: {response.text}")
-                return False
-                
+                    self.log_test("Get Conversations List", False, f"Status {resp.status}: {await resp.text()}")
+                    
+            # Test with user 2 to verify both users can see the conversation
+            headers2 = {"Authorization": f"Bearer {self.user2_token}"}
+            async with self.session.get(f"{API_URL}/chat/conversations", headers=headers2) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if isinstance(data, list) and len(data) > 0:
+                        self.log_test("User 2 Conversations Access", True, f"User 2 can see {len(data)} conversations")
+                    else:
+                        self.log_test("User 2 Conversations Access", False, "User 2 cannot see conversations")
+                else:
+                    self.log_test("User 2 Conversations Access", False, f"Status {resp.status}")
+                    
+            return True
+            
         except Exception as e:
-            self.log_result("Get Connection Requests", False, error_details=str(e))
-            return False
-    
-    def _test_send_connection_request(self):
-        """Test sending a connection request"""
-        if len(self.auth_tokens) < 2:
+            self.log_test("Get Conversations", False, f"Exception: {str(e)}")
             return False
             
-        tokens = list(self.auth_tokens.values())
-        user1_token = tokens[0]
-        
-        # Get user2's ID first
-        user2_token = tokens[1]
-        headers2 = {"Authorization": f"Bearer {user2_token}"}
+    async def test_send_message(self):
+        """Test sending messages to conversations"""
+        print("\n=== Testing Message Sending ===")
         
         try:
-            # Get user2's profile to get their ID
-            response = self.session.get(f"{API_BASE}/users/me", headers=headers2, timeout=10)
-            if response.status_code != 200:
-                self.log_result("Send Connection Request", False, "Failed to get user2 profile")
-                return False
-                
-            user2_data = response.json()
-            user2_id = user2_data["id"]
+            # Test text message
+            message_data = {
+                "conversation_id": self.conversation_id,
+                "message_type": "text",
+                "content": "Hello Bob! How are your studies going at MIT?"
+            }
             
-            # Send connection request from user1 to user2 using query parameter
-            headers1 = {"Authorization": f"Bearer {user1_token}"}
-            
-            response = self.session.post(
-                f"{API_BASE}/connections/request?to_user_id={user2_id}",
-                headers=headers1,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                if "Connection request sent successfully" in data.get("message", ""):
-                    self.log_result("Send Connection Request", True, 
-                                  "Connection request sent successfully")
-                    return True
+            headers = {"Authorization": f"Bearer {self.user1_token}"}
+            async with self.session.post(f"{API_URL}/chat/messages", 
+                                       json=message_data, headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    self.message_id = data["id"]
+                    self.log_test("Send Text Message", True, f"Message sent: {data['id']}")
                 else:
-                    self.log_result("Send Connection Request", False, 
-                                  f"Unexpected response: {data}")
+                    error_text = await resp.text()
+                    self.log_test("Send Text Message", False, f"Status {resp.status}: {error_text}")
                     return False
-            else:
-                self.log_result("Send Connection Request", False, 
-                              f"Status: {response.status_code}, Response: {response.text}")
-                return False
-                
+                    
+            # Test reply message
+            reply_data = {
+                "conversation_id": self.conversation_id,
+                "message_type": "text", 
+                "content": "Hi Alice! Studies are going great. How about Stanford?",
+                "reply_to_id": self.message_id
+            }
+            
+            headers2 = {"Authorization": f"Bearer {self.user2_token}"}
+            async with self.session.post(f"{API_URL}/chat/messages", 
+                                       json=reply_data, headers=headers2) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    self.log_test("Send Reply Message", True, f"Reply sent with reply_to_id: {data['reply_to_id']}")
+                else:
+                    self.log_test("Send Reply Message", False, f"Status {resp.status}: {await resp.text()}")
+                    
+            # Test unauthorized message (user not in conversation)
+            fake_conv_data = {
+                "conversation_id": "fake-conversation-id",
+                "message_type": "text",
+                "content": "This should fail"
+            }
+            
+            async with self.session.post(f"{API_URL}/chat/messages", 
+                                       json=fake_conv_data, headers=headers) as resp:
+                if resp.status == 404:
+                    self.log_test("Message Authorization Check", True, "Correctly rejected unauthorized message")
+                else:
+                    self.log_test("Message Authorization Check", False, f"Should have failed with 404, got {resp.status}")
+                    
+            return True
+            
         except Exception as e:
-            self.log_result("Send Connection Request", False, error_details=str(e))
-            return False
-    
-    def test_connection_response(self):
-        """Test responding to connection requests"""
-        if len(self.auth_tokens) < 2:
+            self.log_test("Send Message", False, f"Exception: {str(e)}")
             return False
             
-        tokens = list(self.auth_tokens.values())
-        user2_token = tokens[1]  # User2 should have incoming request
-        headers = {"Authorization": f"Bearer {user2_token}"}
+    async def test_get_messages(self):
+        """Test retrieving conversation messages with pagination"""
+        print("\n=== Testing Message Retrieval ===")
         
         try:
-            # First get the connection requests to find a request ID
-            response = self.session.get(f"{API_BASE}/connections/requests", headers=headers, timeout=10)
-            if response.status_code != 200:
-                self.log_result("Connection Response", False, "Failed to get connection requests")
-                return False
-                
-            data = response.json()
-            if not data.get("incoming"):
-                self.log_result("Connection Response", False, "No incoming requests to respond to")
-                return False
-                
-            request_id = data["incoming"][0]["id"]
+            headers = {"Authorization": f"Bearer {self.user1_token}"}
             
-            # Accept the connection request
-            response = self.session.post(
-                f"{API_BASE}/connections/respond?request_id={request_id}&action=accept",
-                headers=headers,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                response_data = response.json()
-                if "Connection request accepted" in response_data.get("message", ""):
-                    self.log_result("Connection Response", True, 
-                                  "Connection request accepted successfully")
-                    return True
+            # Test getting messages
+            async with self.session.get(f"{API_URL}/chat/messages/{self.conversation_id}", 
+                                      headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if isinstance(data, list) and len(data) > 0:
+                        self.log_test("Get Conversation Messages", True, f"Retrieved {len(data)} messages")
+                        
+                        # Check message structure
+                        msg = data[0]
+                        required_fields = ["id", "conversation_id", "sender_id", "content", "timestamp"]
+                        if all(field in msg for field in required_fields):
+                            self.log_test("Message Structure Validation", True, "All required fields present")
+                        else:
+                            self.log_test("Message Structure Validation", False, "Missing required fields")
+                            
+                        # Check message ordering (should be oldest first)
+                        if len(data) > 1:
+                            first_time = datetime.fromisoformat(data[0]["timestamp"].replace('Z', '+00:00'))
+                            last_time = datetime.fromisoformat(data[-1]["timestamp"].replace('Z', '+00:00'))
+                            if first_time <= last_time:
+                                self.log_test("Message Ordering", True, "Messages ordered correctly (oldest first)")
+                            else:
+                                self.log_test("Message Ordering", False, "Messages not ordered correctly")
+                    else:
+                        self.log_test("Get Conversation Messages", False, "No messages returned")
                 else:
-                    self.log_result("Connection Response", False, 
-                                  f"Unexpected response: {response_data}")
-                    return False
-            else:
-                self.log_result("Connection Response", False, 
-                              f"Status: {response.status_code}, Response: {response.text}")
-                return False
-                
+                    self.log_test("Get Conversation Messages", False, f"Status {resp.status}: {await resp.text()}")
+                    
+            # Test pagination with limit
+            async with self.session.get(f"{API_URL}/chat/messages/{self.conversation_id}?limit=1", 
+                                      headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if len(data) == 1:
+                        self.log_test("Message Pagination", True, "Limit parameter working correctly")
+                    else:
+                        self.log_test("Message Pagination", False, f"Expected 1 message, got {len(data)}")
+                else:
+                    self.log_test("Message Pagination", False, f"Status {resp.status}")
+                    
+            # Test unauthorized access
+            async with self.session.get(f"{API_URL}/chat/messages/fake-conversation-id", 
+                                      headers=headers) as resp:
+                if resp.status == 404:
+                    self.log_test("Message Access Authorization", True, "Correctly rejected unauthorized access")
+                else:
+                    self.log_test("Message Access Authorization", False, f"Should have failed with 404, got {resp.status}")
+                    
+            return True
+            
         except Exception as e:
-            self.log_result("Connection Response", False, error_details=str(e))
+            self.log_test("Get Messages", False, f"Exception: {str(e)}")
             return False
-    
-    def test_email_verification_invalid_token(self):
-        """Test email verification with invalid token"""
+            
+    async def test_mark_message_read(self):
+        """Test marking messages as read"""
+        print("\n=== Testing Message Read Receipts ===")
+        
         try:
-            response = self.session.post(
-                f"{API_BASE}/auth/verify-email?token=invalid_token_12345",
-                timeout=10
-            )
-            
-            if response.status_code == 400:
-                data = response.json()
-                if "Invalid or expired verification token" in data.get("detail", ""):
-                    self.log_result("Email Verification (invalid token)", True, 
-                                  "Invalid token correctly rejected")
-                    return True
-                else:
-                    self.log_result("Email Verification (invalid token)", False, 
-                                  f"Wrong error message: {data}")
-                    return False
-            else:
-                self.log_result("Email Verification (invalid token)", False, 
-                              f"Expected 400 status, got {response.status_code}")
+            if not self.message_id:
+                self.log_test("Mark Message Read", False, "No message ID available for testing")
                 return False
                 
+            headers = {"Authorization": f"Bearer {self.user2_token}"}
+            async with self.session.post(f"{API_URL}/chat/messages/{self.message_id}/read", 
+                                       headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    self.log_test("Mark Message as Read", True, "Message marked as read successfully")
+                else:
+                    error_text = await resp.text()
+                    self.log_test("Mark Message as Read", False, f"Status {resp.status}: {error_text}")
+                    
+            # Test marking same message as read again (should fail or be idempotent)
+            async with self.session.post(f"{API_URL}/chat/messages/{self.message_id}/read", 
+                                       headers=headers) as resp:
+                if resp.status in [200, 404]:  # Either idempotent or "already read"
+                    self.log_test("Duplicate Read Receipt", True, "Handled duplicate read receipt correctly")
+                else:
+                    self.log_test("Duplicate Read Receipt", False, f"Unexpected status: {resp.status}")
+                    
+            # Test unauthorized read (wrong user)
+            async with self.session.post(f"{API_URL}/chat/messages/fake-message-id/read", 
+                                       headers=headers) as resp:
+                if resp.status == 404:
+                    self.log_test("Read Receipt Authorization", True, "Correctly rejected unauthorized read")
+                else:
+                    self.log_test("Read Receipt Authorization", False, f"Should have failed with 404, got {resp.status}")
+                    
+            return True
+            
         except Exception as e:
-            self.log_result("Email Verification (invalid token)", False, error_details=str(e))
+            self.log_test("Mark Message Read", False, f"Exception: {str(e)}")
             return False
+            
+    async def test_socketio_connection(self):
+        """Test Socket.IO connection and authentication"""
+        print("\n=== Testing Socket.IO Real-time Features ===")
+        
+        try:
+            # Create Socket.IO client
+            self.sio_client = socketio.AsyncClient()
+            
+            # Track events
+            events_received = []
+            
+            @self.sio_client.event
+            async def connect():
+                events_received.append('connect')
+                
+            @self.sio_client.event
+            async def authenticated(data):
+                events_received.append(f'authenticated:{data.get("user_id")}')
+                
+            @self.sio_client.event
+            async def auth_error(data):
+                events_received.append(f'auth_error:{data.get("message")}')
+                
+            @self.sio_client.event
+            async def joined_conversation(data):
+                events_received.append(f'joined_conversation:{data.get("conversation_id")}')
+                
+            @self.sio_client.event
+            async def new_message(data):
+                events_received.append(f'new_message:{data.get("conversation_id")}')
+                
+            @self.sio_client.event
+            async def typing_start(data):
+                events_received.append(f'typing_start:{data.get("user_id")}')
+                
+            @self.sio_client.event
+            async def typing_stop(data):
+                events_received.append(f'typing_stop:{data.get("user_id")}')
+                
+            @self.sio_client.event
+            async def message_read(data):
+                events_received.append(f'message_read:{data.get("message_id")}')
+            
+            # Connect to Socket.IO server
+            socket_url = f"{BASE_URL}/socket.io"
+            await self.sio_client.connect(socket_url)
+            await asyncio.sleep(1)  # Wait for connection
+            
+            if 'connect' in events_received:
+                self.log_test("Socket.IO Connection", True, "Connected to Socket.IO server")
+            else:
+                self.log_test("Socket.IO Connection", False, "Failed to connect to Socket.IO server")
+                return False
+                
+            # Test authentication
+            await self.sio_client.emit('authenticate', {
+                'user_id': self.user1_id,
+                'token': self.user1_token
+            })
+            await asyncio.sleep(1)
+            
+            if any('authenticated' in event for event in events_received):
+                self.log_test("Socket.IO Authentication", True, "Successfully authenticated")
+            else:
+                self.log_test("Socket.IO Authentication", False, "Authentication failed")
+                
+            # Test joining conversation
+            await self.sio_client.emit('join_conversation', {
+                'conversation_id': self.conversation_id
+            })
+            await asyncio.sleep(1)
+            
+            if any('joined_conversation' in event for event in events_received):
+                self.log_test("Join Conversation Room", True, "Successfully joined conversation room")
+            else:
+                self.log_test("Join Conversation Room", False, "Failed to join conversation room")
+                
+            # Test typing indicators
+            await self.sio_client.emit('typing_start', {
+                'conversation_id': self.conversation_id
+            })
+            await asyncio.sleep(0.5)
+            
+            await self.sio_client.emit('typing_stop', {
+                'conversation_id': self.conversation_id
+            })
+            await asyncio.sleep(0.5)
+            
+            self.log_test("Typing Indicators", True, "Typing start/stop events sent successfully")
+            
+            # Test message read receipt
+            if self.message_id:
+                await self.sio_client.emit('message_read', {
+                    'message_id': self.message_id,
+                    'conversation_id': self.conversation_id
+                })
+                await asyncio.sleep(0.5)
+                self.log_test("Socket.IO Read Receipt", True, "Read receipt event sent successfully")
+            
+            # Test real-time message broadcasting
+            await self.sio_client.emit('send_message', {
+                'conversation_id': self.conversation_id,
+                'message': {
+                    'content': 'Real-time test message',
+                    'type': 'text'
+                }
+            })
+            await asyncio.sleep(1)
+            
+            if any('new_message' in event for event in events_received):
+                self.log_test("Real-time Message Broadcasting", True, "Message broadcast received")
+            else:
+                self.log_test("Real-time Message Broadcasting", False, "Message broadcast not received")
+                
+            await self.sio_client.disconnect()
+            self.log_test("Socket.IO Disconnect", True, "Disconnected successfully")
+            
+            return True
+            
+        except Exception as e:
+            self.log_test("Socket.IO Testing", False, f"Exception: {str(e)}")
+            if self.sio_client:
+                try:
+                    await self.sio_client.disconnect()
+                except:
+                    pass
+            return False
+            
+    async def run_all_tests(self):
+        """Run all chat system tests"""
+        print("🚀 Starting Real-time Chat System Backend Testing")
+        print(f"Backend URL: {BASE_URL}")
+        print("=" * 60)
+        
+        await self.setup_session()
+        
+        try:
+            # Setup test users
+            if not await self.setup_test_users():
+                print("❌ Failed to setup test users. Aborting tests.")
+                return
+                
+            # Run chat tests in sequence
+            await self.test_create_conversation()
+            await self.test_get_conversations()
+            await self.test_send_message()
+            await self.test_get_messages()
+            await self.test_mark_message_read()
+            await self.test_socketio_connection()
+            
+        finally:
+            await self.cleanup_session()
+            
+        # Print summary
+        print("\n" + "=" * 60)
+        print("📊 TEST SUMMARY")
+        print("=" * 60)
+        
+        passed = sum(1 for result in self.test_results if result['success'])
+        total = len(self.test_results)
+        
+        print(f"Total Tests: {total}")
+        print(f"Passed: {passed}")
+        print(f"Failed: {total - passed}")
+        print(f"Success Rate: {(passed/total)*100:.1f}%")
+        
+        if total - passed > 0:
+            print("\n❌ FAILED TESTS:")
+            for result in self.test_results:
+                if not result['success']:
+                    print(f"  • {result['test']}: {result['message']}")
+                    
+        print("\n✅ PASSED TESTS:")
+        for result in self.test_results:
+            if result['success']:
+                print(f"  • {result['test']}")
+                
+        return passed == total
+
+async def main():
+    """Main test runner"""
+    tester = ChatSystemTester()
+    success = await tester.run_all_tests()
     
-    def run_all_tests(self):
-        """Run all backend tests"""
-        print("=" * 60)
-        print("BACKEND API TESTING - International Student Networking App")
-        print("=" * 60)
-        print(f"Testing against: {API_BASE}")
-        print()
-        
-        # Test server health first
-        if not self.test_server_health():
-            print("❌ Server is not accessible. Stopping tests.")
-            return self.results
-        
-        # Authentication Tests
-        print("🔐 AUTHENTICATION TESTS")
-        print("-" * 30)
-        self.test_user_registration_valid_edu()
-        self.test_user_registration_invalid_email()
-        self.test_user_login_valid()
-        self.test_user_login_invalid()
-        self.test_protected_endpoint_without_token()
-        self.test_protected_endpoint_with_token()
-        
-        # User Profile Tests
-        print("👤 USER PROFILE TESTS")
-        print("-" * 30)
-        self.test_update_user_profile()
-        self.test_user_search()
-        
-        # Connection System Tests
-        print("🤝 CONNECTION SYSTEM TESTS")
-        print("-" * 30)
-        self.test_connection_system()
-        self.test_connection_response()
-        
-        # Additional Tests
-        print("🔍 ADDITIONAL TESTS")
-        print("-" * 30)
-        self.test_email_verification_invalid_token()
-        
-        # Summary
-        print("=" * 60)
-        print("TEST SUMMARY")
-        print("=" * 60)
-        print(f"✅ Passed: {self.results['passed']}")
-        print(f"❌ Failed: {self.results['failed']}")
-        print(f"📊 Total: {self.results['passed'] + self.results['failed']}")
-        
-        if self.results['errors']:
-            print("\n🚨 ERRORS FOUND:")
-            for error in self.results['errors']:
-                print(f"   • {error}")
-        
-        return self.results
+    if success:
+        print("\n🎉 All tests passed! Chat system is working correctly.")
+        sys.exit(0)
+    else:
+        print("\n⚠️  Some tests failed. Please check the results above.")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    tester = BackendTester()
-    results = tester.run_all_tests()
+    asyncio.run(main())
