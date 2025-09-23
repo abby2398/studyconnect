@@ -433,13 +433,11 @@ class BackendTester:
             user2_data = response.json()
             user2_id = user2_data["id"]
             
-            # Send connection request from user1 to user2
+            # Send connection request from user1 to user2 using query parameter
             headers1 = {"Authorization": f"Bearer {user1_token}"}
-            request_data = {"to_user_id": user2_id}
             
             response = self.session.post(
-                f"{API_BASE}/connections/request",
-                json=request_data,
+                f"{API_BASE}/connections/request?to_user_id={user2_id}",
                 headers=headers1,
                 timeout=10
             )
