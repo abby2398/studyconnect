@@ -440,9 +440,6 @@ const styles = StyleSheet.create({
   appleSocialText: {
     color: '#000000',
   },
-  githubSocialButton: {
-    backgroundColor: '#24292e',
-  },
   registerLink: {
     alignItems: 'center',
     paddingVertical: 16,
