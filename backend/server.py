@@ -854,6 +854,10 @@ async def message_read(sid, data):
 # Include routers
 app.include_router(api_router)
 
+# Import and include posts router
+from posts_routes import posts_router
+app.include_router(posts_router)
+
 # Mount Socket.IO
 app.mount("/socket.io", socketio.ASGIApp(sio))
 
