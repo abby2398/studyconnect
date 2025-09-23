@@ -339,9 +339,9 @@ class ConnectionSystemTester:
         
         # Send connection request from user1 to user3
         try:
-            request_data = {"to_user_id": user3['user_id']}
+            params = {"to_user_id": user3['user_id']}
             response = self.session.post(f"{self.base_url}/connections/request", 
-                                       json=request_data, headers=headers1)
+                                       params=params, headers=headers1)
             
             if response.status_code == 200:
                 self.log_test("Connection Request (User1 -> User3)", True, "Connection request sent successfully")
