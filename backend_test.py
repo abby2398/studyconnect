@@ -671,8 +671,8 @@ class EventsSystemTester:
         try:
             # Create test users
             print("\n=== Setting up Test Users ===")
-            await self.create_test_user("alice.johnson@stanford.edu", "Alice", "Johnson")
-            await self.create_test_user("bob.smith@mit.edu", "Bob", "Smith")
+            await self.create_test_user("events.test.alice@stanford.edu", "Alice", "Johnson")
+            await self.create_test_user("events.test.bob@mit.edu", "Bob", "Smith")
             
             if len(self.test_users) < 2:
                 print("❌ Failed to create required test users")
