@@ -309,7 +309,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Google OAuth Integration"
+    - "Events System"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
