@@ -11,28 +11,66 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
 
 interface ChatItem {
-  id: string;
-  user_name: string;
-  last_message: string;
-  timestamp: string;
+  conversation: {
+    id: string;
+    participants: string[];
+    is_group_chat: boolean;
+    group_name?: string;
+    created_at: string;
+    updated_at: string;
+  };
+  other_participant?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+  };
   unread_count: number;
-  is_online: boolean;
+  last_message?: {
+    id: string;
+    content?: string;
+    message_type: string;
+    timestamp: string;
+    sender_id: string;
+  };
 }
 
 export default function ChatScreen() {
   const [chats, setChats] = useState<ChatItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
     loadChats();
   }, []);
 
   const loadChats = async () => {
-    // TODO: Implement actual chat loading
-    // For now, show empty state
-    setChats([]);
+    try {
+      const token = await AsyncStorage.getItem('auth_token');
+      if (!token) return;
+
+      const response = await fetch(
+        `${process.env.EXPO_PUBLIC_BACKEND_URL}/api/chat/conversations`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const conversationsData = await response.json();
+        setChats(conversationsData);
+      }
+    } catch (error) {
+      console.error('Error loading chats:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const onRefresh = async () => {
@@ -64,6 +102,21 @@ export default function ChatScreen() {
     }
   };
 
+  const handleChatPress = (chat: ChatItem) => {
+    router.push(`/chat/conversation/${chat.conversation.id}`);
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#1a1a2e" />
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading conversations...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1a1a2e" />
@@ -92,28 +145,42 @@ export default function ChatScreen() {
           <View style={styles.chatList}>
             {chats.map((chat) => (
               <TouchableOpacity
-                key={chat.id}
+                key={chat.conversation.id}
                 style={styles.chatItem}
+                onPress={() => handleChatPress(chat)}
                 activeOpacity={0.8}
               >
                 <View style={styles.chatAvatar}>
                   <Text style={styles.avatarText}>
-                    {chat.user_name.charAt(0).toUpperCase()}
+                    {chat.conversation.is_group_chat 
+                      ? (chat.conversation.group_name?.charAt(0).toUpperCase() || 'G')
+                      : (chat.other_participant 
+                          ? `${chat.other_participant.first_name.charAt(0)}${chat.other_participant.last_name.charAt(0)}` 
+                          : 'U')
+                    }
                   </Text>
-                  {chat.is_online && <View style={styles.onlineIndicator} />}
                 </View>
 
                 <View style={styles.chatInfo}>
                   <View style={styles.chatHeader}>
-                    <Text style={styles.chatName}>{chat.user_name}</Text>
-                    <Text style={styles.chatTime}>
-                      {formatTime(chat.timestamp)}
+                    <Text style={styles.chatName}>
+                      {chat.conversation.is_group_chat 
+                        ? (chat.conversation.group_name || 'Group Chat')
+                        : (chat.other_participant 
+                            ? `${chat.other_participant.first_name} ${chat.other_participant.last_name}` 
+                            : 'Unknown User')
+                      }
                     </Text>
+                    {chat.last_message && (
+                      <Text style={styles.chatTime}>
+                        {formatTime(chat.last_message.timestamp)}
+                      </Text>
+                    )}
                   </View>
                   
                   <View style={styles.chatPreview}>
                     <Text style={styles.lastMessage} numberOfLines={1}>
-                      {chat.last_message}
+                      {chat.last_message?.content || 'No messages yet'}
                     </Text>
                     {chat.unread_count > 0 && (
                       <View style={styles.unreadBadge}>
@@ -138,6 +205,7 @@ export default function ChatScreen() {
             
             <TouchableOpacity 
               style={styles.emptyStateButton}
+              onPress={() => router.push('/(tabs)/search')}
               activeOpacity={0.8}
             >
               <Text style={styles.emptyStateButtonText}>Find Students</Text>
@@ -219,6 +287,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#1a1a2e',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#a0a0a0',
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -263,17 +340,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#ffffff',
-  },
-  onlineIndicator: {
-    position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#00b894',
-    borderWidth: 2,
-    borderColor: '#1a1a2e',
   },
   chatInfo: {
     flex: 1,

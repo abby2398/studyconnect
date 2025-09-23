@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Form, File, UploadFile
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Form, File, UploadFile, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -7,7 +7,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Set
 import uuid
 from datetime import datetime, timedelta
 import bcrypt
@@ -21,6 +21,7 @@ import asyncio
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 import socketio
+from enum import Enum
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -49,15 +50,77 @@ sio = socketio.AsyncServer(
     engineio_logger=True
 )
 
-# Import chat system
-from chat_models import *
-from chat_routes import chat_router
-from socket_handlers import ChatSocketHandler
+# Chat Models
+class MessageType(str, Enum):
+    TEXT = "text"
+    IMAGE = "image"
+    VOICE = "voice"
+    FILE = "file"
+    SYSTEM = "system"
 
-# Initialize chat handler
-chat_handler = ChatSocketHandler(sio)
+class MessageStatus(str, Enum):
+    SENT = "sent"
+    DELIVERED = "delivered"
+    READ = "read"
 
-# Models (existing models remain the same)
+class FileAttachment(BaseModel):
+    filename: str
+    file_size: int
+    file_type: str
+    file_data: str  # base64 encoded
+
+class VoiceMessage(BaseModel):
+    duration: float  # in seconds
+    audio_data: str  # base64 encoded audio
+
+class Message(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    conversation_id: str
+    sender_id: str
+    message_type: MessageType = MessageType.TEXT
+    content: Optional[str] = None
+    file_attachment: Optional[FileAttachment] = None
+    voice_message: Optional[VoiceMessage] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    status: MessageStatus = MessageStatus.SENT
+    read_by: List[str] = Field(default_factory=list)  # List of user IDs who read the message
+    reply_to_id: Optional[str] = None  # For message replies
+    edited_at: Optional[datetime] = None
+    is_deleted: bool = False
+
+class MessageCreate(BaseModel):
+    conversation_id: str
+    message_type: MessageType = MessageType.TEXT
+    content: Optional[str] = None
+    file_attachment: Optional[FileAttachment] = None
+    voice_message: Optional[VoiceMessage] = None
+    reply_to_id: Optional[str] = None
+
+class Conversation(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    participants: List[str]  # List of user IDs
+    is_group_chat: bool = False
+    group_name: Optional[str] = None
+    group_description: Optional[str] = None
+    group_admin: Optional[str] = None  # User ID of group admin
+    last_message_id: Optional[str] = None
+    last_message_timestamp: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+class ConversationCreate(BaseModel):
+    participants: List[str]
+    is_group_chat: bool = False
+    group_name: Optional[str] = None
+    group_description: Optional[str] = None
+
+class ConversationWithDetails(BaseModel):
+    conversation: Conversation
+    other_participant: Optional[Dict[str, Any]] = None  # Other user details for 1-on-1 chats
+    unread_count: int = 0
+    last_message: Optional[Message] = None
+
+# Existing User Models
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
@@ -115,7 +178,7 @@ class ConnectionRequest(BaseModel):
     status: str = "pending"  # pending, accepted, rejected
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-# Utility Functions (remain the same)
+# Utility Functions
 def hash_password(password: str) -> str:
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
@@ -166,7 +229,7 @@ async def send_verification_email(email: str, token: str, name: str):
     verification_link = f"http://localhost:3000/verify-email?token={token}"
     print(f"Verification email for {name} ({email}): {verification_link}")
 
-# Authentication Routes (remain the same)
+# Authentication Routes
 @api_router.post("/auth/register")
 async def register(user_data: UserCreate):
     # Check if email already exists
@@ -258,7 +321,7 @@ async def verify_email(token: str):
     
     return {"message": "Email verified successfully"}
 
-# User Profile Routes (remain the same)
+# User Profile Routes
 @api_router.get("/users/me", response_model=User)
 async def get_current_user_profile(current_user: User = Depends(get_current_user)):
     return current_user
@@ -292,7 +355,7 @@ async def update_profile(
     
     return {"message": "Profile updated successfully", "user": updated_user.dict()}
 
-# Search and Discovery Routes (remain the same)
+# Search and Discovery Routes
 @api_router.get("/users/search")
 async def search_users(
     country: Optional[str] = None,
@@ -337,7 +400,7 @@ async def search_users(
     
     return {"users": users, "total": len(users)}
 
-# Connection Routes (remain the same)
+# Connection Routes
 @api_router.post("/connections/request")
 async def send_connection_request(
     to_user_id: str,
@@ -432,8 +495,6 @@ async def respond_to_request(
     
     # If accepted, create a conversation between users
     if action == "accept":
-        from chat_models import ConversationCreate, Conversation
-        
         # Check if conversation already exists
         existing_conversation = await db.conversations.find_one({
             "participants": {"$all": [current_user.id, request_doc['from_user_id']], "$size": 2},
@@ -450,18 +511,351 @@ async def respond_to_request(
     
     return {"message": f"Connection request {new_status}"}
 
-# Include chat router
+# Chat Routes
+@api_router.post("/chat/conversations", response_model=Conversation)
+async def create_conversation(
+    conversation_data: ConversationCreate,
+    current_user: User = Depends(get_current_user)
+):
+    # Validate that current user is in participants
+    if current_user.id not in conversation_data.participants:
+        conversation_data.participants.append(current_user.id)
+    
+    # Check if 1-on-1 conversation already exists
+    if not conversation_data.is_group_chat and len(conversation_data.participants) == 2:
+        existing_conversation = await db.conversations.find_one({
+            "participants": {"$all": conversation_data.participants, "$size": 2},
+            "is_group_chat": False
+        })
+        
+        if existing_conversation:
+            return Conversation(**{k: v for k, v in existing_conversation.items() if k != '_id'})
+    
+    # Create new conversation
+    conversation = Conversation(
+        participants=conversation_data.participants,
+        is_group_chat=conversation_data.is_group_chat,
+        group_name=conversation_data.group_name,
+        group_description=conversation_data.group_description,
+        group_admin=current_user.id if conversation_data.is_group_chat else None
+    )
+    
+    await db.conversations.insert_one(conversation.dict())
+    return conversation
+
+@api_router.get("/chat/conversations", response_model=List[ConversationWithDetails])
+async def get_user_conversations(
+    current_user: User = Depends(get_current_user),
+    limit: int = Query(20, ge=1, le=100)
+):
+    # Find conversations where user is participant
+    conversations_cursor = db.conversations.find({
+        "participants": current_user.id
+    }).sort("updated_at", -1).limit(limit)
+    
+    conversations_docs = await conversations_cursor.to_list(length=limit)
+    
+    result = []
+    for conv_doc in conversations_docs:
+        conversation = Conversation(**{k: v for k, v in conv_doc.items() if k != '_id'})
+        
+        # Get other participant details for 1-on-1 chats
+        other_participant = None
+        if not conversation.is_group_chat:
+            other_user_id = next((p for p in conversation.participants if p != current_user.id), None)
+            if other_user_id:
+                other_user_doc = await db.users.find_one({"id": other_user_id})
+                if other_user_doc:
+                    other_participant = {
+                        "id": other_user_doc["id"],
+                        "first_name": other_user_doc["first_name"],
+                        "last_name": other_user_doc["last_name"],
+                        "email": other_user_doc["email"],
+                        "profile": other_user_doc.get("profile")
+                    }
+        
+        # Get unread messages count
+        unread_count = await db.messages.count_documents({
+            "conversation_id": conversation.id,
+            "sender_id": {"$ne": current_user.id},
+            "read_by": {"$not": {"$in": [current_user.id]}}
+        })
+        
+        # Get last message
+        last_message = None
+        if conversation.last_message_id:
+            last_message_doc = await db.messages.find_one({"id": conversation.last_message_id})
+            if last_message_doc:
+                last_message = Message(**{k: v for k, v in last_message_doc.items() if k != '_id'})
+        
+        result.append(ConversationWithDetails(
+            conversation=conversation,
+            other_participant=other_participant,
+            unread_count=unread_count,
+            last_message=last_message
+        ))
+    
+    return result
+
+@api_router.post("/chat/messages", response_model=Message)
+async def send_message(
+    message_data: MessageCreate,
+    current_user: User = Depends(get_current_user)
+):
+    # Verify user is participant in conversation
+    conversation = await db.conversations.find_one({"id": message_data.conversation_id})
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    if current_user.id not in conversation["participants"]:
+        raise HTTPException(status_code=403, detail="Not a participant in this conversation")
+    
+    # Create message
+    message = Message(
+        conversation_id=message_data.conversation_id,
+        sender_id=current_user.id,
+        message_type=message_data.message_type,
+        content=message_data.content,
+        file_attachment=message_data.file_attachment,
+        voice_message=message_data.voice_message,
+        reply_to_id=message_data.reply_to_id
+    )
+    
+    # Save message
+    await db.messages.insert_one(message.dict())
+    
+    # Update conversation's last message
+    await db.conversations.update_one(
+        {"id": message_data.conversation_id},
+        {
+            "$set": {
+                "last_message_id": message.id,
+                "last_message_timestamp": message.timestamp,
+                "updated_at": datetime.utcnow()
+            }
+        }
+    )
+    
+    return message
+
+@api_router.get("/chat/messages/{conversation_id}", response_model=List[Message])
+async def get_conversation_messages(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user),
+    limit: int = Query(50, ge=1, le=100),
+    before_timestamp: Optional[datetime] = Query(None)
+):
+    # Verify user is participant in conversation
+    conversation = await db.conversations.find_one({"id": conversation_id})
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    if current_user.id not in conversation["participants"]:
+        raise HTTPException(status_code=403, detail="Not a participant in this conversation")
+    
+    # Build query
+    query = {"conversation_id": conversation_id, "is_deleted": False}
+    if before_timestamp:
+        query["timestamp"] = {"$lt": before_timestamp}
+    
+    # Get messages
+    messages_cursor = db.messages.find(query).sort("timestamp", -1).limit(limit)
+    messages_docs = await messages_cursor.to_list(length=limit)
+    
+    # Convert to Message objects and reverse order (oldest first)
+    messages = []
+    for msg_doc in reversed(messages_docs):
+        message = Message(**{k: v for k, v in msg_doc.items() if k != '_id'})
+        messages.append(message)
+    
+    return messages
+
+@api_router.post("/chat/messages/{message_id}/read")
+async def mark_message_as_read(
+    message_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    # Update message read status
+    result = await db.messages.update_one(
+        {
+            "id": message_id,
+            "read_by": {"$not": {"$in": [current_user.id]}}
+        },
+        {
+            "$addToSet": {"read_by": current_user.id},
+            "$set": {"status": MessageStatus.READ}
+        }
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Message not found or already read")
+    
+    return {"message": "Message marked as read"}
+
+# Socket.IO Handlers
+active_connections: Dict[str, Set[str]] = {}  # user_id -> set of session_ids
+user_sessions: Dict[str, str] = {}  # session_id -> user_id
+typing_users: Dict[str, Dict[str, datetime]] = {}  # conversation_id -> {user_id: timestamp}
+
+@sio.event
+async def connect(sid, environ, auth):
+    print(f"Socket connected: {sid}")
+
+@sio.event
+async def disconnect(sid):
+    print(f"Socket disconnected: {sid}")
+    
+    if sid in user_sessions:
+        user_id = user_sessions[sid]
+        
+        # Remove session from active connections
+        if user_id in active_connections:
+            active_connections[user_id].discard(sid)
+            if not active_connections[user_id]:
+                del active_connections[user_id]
+        
+        del user_sessions[sid]
+
+@sio.event
+async def authenticate(sid, data):
+    try:
+        user_id = data.get('user_id')
+        token = data.get('token')
+        
+        if not user_id or not token:
+            await sio.emit('auth_error', {'message': 'Missing user_id or token'}, to=sid)
+            return
+        
+        # Add to active connections
+        if user_id not in active_connections:
+            active_connections[user_id] = set()
+        active_connections[user_id].add(sid)
+        user_sessions[sid] = user_id
+        
+        await sio.emit('authenticated', {'user_id': user_id}, to=sid)
+        print(f"User {user_id} authenticated with session {sid}")
+        
+    except Exception as e:
+        print(f"Authentication error: {e}")
+        await sio.emit('auth_error', {'message': 'Authentication failed'}, to=sid)
+
+@sio.event
+async def join_conversation(sid, data):
+    try:
+        conversation_id = data.get('conversation_id')
+        if not conversation_id:
+            return
+        
+        await sio.enter_room(sid, f"conversation_{conversation_id}")
+        await sio.emit('joined_conversation', {
+            'conversation_id': conversation_id
+        }, to=sid)
+        
+        print(f"Session {sid} joined conversation {conversation_id}")
+        
+    except Exception as e:
+        print(f"Error joining conversation: {e}")
+
+@sio.event
+async def send_message(sid, data):
+    try:
+        conversation_id = data.get('conversation_id')
+        message_data = data.get('message')
+        
+        if not conversation_id or not message_data:
+            return
+        
+        user_id = user_sessions.get(sid)
+        if not user_id:
+            return
+        
+        # Broadcast message to all participants in conversation
+        await sio.emit('new_message', {
+            'conversation_id': conversation_id,
+            'message': message_data,
+            'sender_id': user_id,
+            'timestamp': datetime.utcnow().isoformat()
+        }, room=f"conversation_{conversation_id}")
+        
+    except Exception as e:
+        print(f"Error handling send_message: {e}")
+
+@sio.event
+async def typing_start(sid, data):
+    try:
+        conversation_id = data.get('conversation_id')
+        user_id = user_sessions.get(sid)
+        
+        if not conversation_id or not user_id:
+            return
+        
+        # Track typing user
+        if conversation_id not in typing_users:
+            typing_users[conversation_id] = {}
+        typing_users[conversation_id][user_id] = datetime.utcnow()
+        
+        # Broadcast typing indicator to other participants
+        await sio.emit('typing_start', {
+            'conversation_id': conversation_id,
+            'user_id': user_id,
+            'timestamp': datetime.utcnow().isoformat()
+        }, room=f"conversation_{conversation_id}", skip_sid=sid)
+        
+    except Exception as e:
+        print(f"Error handling typing_start: {e}")
+
+@sio.event
+async def typing_stop(sid, data):
+    try:
+        conversation_id = data.get('conversation_id')
+        user_id = data.get('user_id') or user_sessions.get(sid)
+        
+        if not conversation_id or not user_id:
+            return
+        
+        # Remove from typing users
+        if conversation_id in typing_users and user_id in typing_users[conversation_id]:
+            del typing_users[conversation_id][user_id]
+            
+            if not typing_users[conversation_id]:
+                del typing_users[conversation_id]
+        
+        # Broadcast typing stop to other participants
+        await sio.emit('typing_stop', {
+            'conversation_id': conversation_id,
+            'user_id': user_id,
+            'timestamp': datetime.utcnow().isoformat()
+        }, room=f"conversation_{conversation_id}", skip_sid=sid)
+        
+    except Exception as e:
+        print(f"Error handling typing_stop: {e}")
+
+@sio.event
+async def message_read(sid, data):
+    try:
+        message_id = data.get('message_id')
+        conversation_id = data.get('conversation_id')
+        user_id = user_sessions.get(sid)
+        
+        if not message_id or not conversation_id or not user_id:
+            return
+        
+        # Broadcast read receipt to other participants
+        await sio.emit('message_read', {
+            'message_id': message_id,
+            'conversation_id': conversation_id,
+            'user_id': user_id,
+            'read_at': datetime.utcnow().isoformat()
+        }, room=f"conversation_{conversation_id}", skip_sid=sid)
+        
+    except Exception as e:
+        print(f"Error handling message_read: {e}")
+
+# Include routers
 app.include_router(api_router)
-app.include_router(chat_router)
 
 # Mount Socket.IO
 app.mount("/socket.io", socketio.ASGIApp(sio))
-
-# Start cleanup task
-@app.on_event("startup")
-async def startup_event():
-    from socket_handlers import cleanup_typing_indicators
-    asyncio.create_task(cleanup_typing_indicators())
 
 # CORS middleware
 app.add_middleware(
