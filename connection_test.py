@@ -238,9 +238,9 @@ class ConnectionSystemTester:
         
         # Test POST /api/connections/request - Send connection request
         try:
-            request_data = {"to_user_id": user2['user_id']}
+            params = {"to_user_id": user2['user_id']}
             response = self.session.post(f"{self.base_url}/connections/request", 
-                                       json=request_data, headers=headers1)
+                                       params=params, headers=headers1)
             
             if response.status_code == 200:
                 self.log_test("POST /api/connections/request", True, f"Connection request sent from {user1['email']} to {user2['email']}")
