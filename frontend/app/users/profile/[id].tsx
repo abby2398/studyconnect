@@ -152,16 +152,12 @@ export default function UserProfileScreen() {
       if (!token) return;
 
       const response = await fetch(
-        `${process.env.EXPO_PUBLIC_BACKEND_URL}/api/connections/request`,
+        `${process.env.EXPO_PUBLIC_BACKEND_URL}/api/connections/request?to_user_id=${userId}`,
         {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`,
           },
-          body: JSON.stringify({
-            to_user_id: userId,
-          }),
         }
       );
 
