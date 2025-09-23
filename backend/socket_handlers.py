@@ -3,8 +3,8 @@ from typing import Dict, Set
 import json
 from datetime import datetime
 import asyncio
-from .chat_models import TypingIndicator, OnlineStatus, Message
-from .server import db
+from chat_models import TypingIndicator, OnlineStatus, Message
+from server import db
 
 # Store active connections
 active_connections: Dict[str, Set[str]] = {}  # user_id -> set of session_ids
