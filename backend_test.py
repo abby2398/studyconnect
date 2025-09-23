@@ -408,7 +408,10 @@ class BackendTester:
                 self.log_result("Connection System Setup", False, error_details=str(e))
                 return False
         
-    def _test_get_connection_requests(self):
+        # Now test connection requests
+        success1 = self._test_send_connection_request()
+        success2 = self._test_get_connection_requests()
+        return success1 and success2
         """Test getting connection requests"""
         if len(self.auth_tokens) < 2:
             return False
