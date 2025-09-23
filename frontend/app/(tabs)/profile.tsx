@@ -67,7 +67,8 @@ export default function ProfileScreen() {
           onPress: async () => {
             try {
               await AsyncStorage.multiRemove(['auth_token', 'user_data']);
-              router.replace('/auth/welcome');
+              // Use router.push instead of router.replace and correct path
+              router.push('/auth/login');
             } catch (error) {
               console.error('Logout error:', error);
             }
