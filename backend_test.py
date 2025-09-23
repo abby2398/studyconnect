@@ -34,7 +34,7 @@ class EventsSystemTester:
     async def create_test_user(self, email: str, first_name: str, last_name: str) -> Dict[str, Any]:
         """Create a test user and return auth token"""
         try:
-            # Register user
+            # Try to register user (might already exist)
             register_data = {
                 "email": email,
                 "password": "TestPassword123!",
@@ -43,11 +43,11 @@ class EventsSystemTester:
             }
             
             async with self.session.post(f"{API_BASE}/auth/register", json=register_data) as response:
-                if response.status != 200:
+                if response.status not in [200, 400]:  # 400 means already exists
                     print(f"Registration failed for {email}: {await response.text()}")
                     return None
             
-            # Login user
+            # Login user (whether newly created or existing)
             login_data = {
                 "email": email,
                 "password": "TestPassword123!"
@@ -64,6 +64,7 @@ class EventsSystemTester:
                         "last_name": last_name
                     }
                     self.test_users.append(user_data)
+                    print(f"✅ User {first_name} {last_name} logged in successfully")
                     return user_data
                 else:
                     print(f"Login failed for {email}: {await response.text()}")
