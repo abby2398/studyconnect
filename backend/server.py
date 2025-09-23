@@ -322,6 +322,9 @@ async def google_oauth_login(oauth_data: GoogleOAuthData):
             "user": user.dict()
         }
         
+    except HTTPException as e:
+        print(f"Google OAuth error: {e.status_code}: {e.detail}")
+        raise e  # Re-raise the HTTPException with original status code
     except Exception as e:
         print(f"Google OAuth error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to process Google authentication")
