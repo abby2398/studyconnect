@@ -296,9 +296,9 @@ class ConnectionSystemTester:
         
         # Test connection request to self (should fail)
         try:
-            request_data = {"to_user_id": user1['user_id']}
+            params = {"to_user_id": user1['user_id']}
             response = self.session.post(f"{self.base_url}/connections/request", 
-                                       json=request_data, headers=headers1)
+                                       params=params, headers=headers1)
             
             if response.status_code == 400:
                 self.log_test("POST /api/connections/request (self)", True, "Correctly rejected self-connection request")
