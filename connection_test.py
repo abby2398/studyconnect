@@ -364,12 +364,12 @@ class ConnectionSystemTester:
                 
                 if incoming:
                     request_id = incoming[0]['id']
-                    response_data = {
+                    params = {
                         "request_id": request_id,
                         "action": "reject"
                     }
                     reject_response = self.session.post(f"{self.base_url}/connections/respond", 
-                                                      json=response_data, headers=headers3)
+                                                      params=params, headers=headers3)
                     
                     if reject_response.status_code == 200:
                         self.log_test("POST /api/connections/respond (reject)", True, "Connection request rejected successfully")
