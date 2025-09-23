@@ -420,14 +420,23 @@ class ChatSystemTester:
         print("\n=== Testing Socket.IO Real-time Features ===")
         
         try:
+            # First check if Socket.IO endpoint is accessible
+            async with self.session.get(f"{BASE_URL}/socket.io/") as resp:
+                if resp.status == 404:
+                    self.log_test("Socket.IO Endpoint Check", False, "Socket.IO endpoint not accessible - may be a routing issue")
+                    return False
+                    
             # Create Socket.IO client
-            self.sio_client = socketio.AsyncClient()
+            self.sio_client = socketio.AsyncClient(logger=False, engineio_logger=False)
             
             # Track events
             events_received = []
+            connection_successful = False
             
             @self.sio_client.event
             async def connect():
+                nonlocal connection_successful
+                connection_successful = True
                 events_received.append('connect')
                 
             @self.sio_client.event
@@ -458,80 +467,89 @@ class ChatSystemTester:
             async def message_read(data):
                 events_received.append(f'message_read:{data.get("message_id")}')
             
-            # Connect to Socket.IO server
+            # Connect to Socket.IO server with timeout
             socket_url = f"{BASE_URL}/socket.io"
-            await self.sio_client.connect(socket_url)
-            await asyncio.sleep(1)  # Wait for connection
-            
-            if 'connect' in events_received:
-                self.log_test("Socket.IO Connection", True, "Connected to Socket.IO server")
-            else:
-                self.log_test("Socket.IO Connection", False, "Failed to connect to Socket.IO server")
+            try:
+                await asyncio.wait_for(self.sio_client.connect(socket_url), timeout=10.0)
+                await asyncio.sleep(2)  # Wait for connection to stabilize
+                
+                if connection_successful:
+                    self.log_test("Socket.IO Connection", True, "Connected to Socket.IO server")
+                    
+                    # Test authentication
+                    await self.sio_client.emit('authenticate', {
+                        'user_id': self.user1_id,
+                        'token': self.user1_token
+                    })
+                    await asyncio.sleep(2)
+                    
+                    if any('authenticated' in event for event in events_received):
+                        self.log_test("Socket.IO Authentication", True, "Successfully authenticated")
+                    else:
+                        self.log_test("Socket.IO Authentication", False, "Authentication failed")
+                        
+                    # Test joining conversation
+                    await self.sio_client.emit('join_conversation', {
+                        'conversation_id': self.conversation_id
+                    })
+                    await asyncio.sleep(1)
+                    
+                    if any('joined_conversation' in event for event in events_received):
+                        self.log_test("Join Conversation Room", True, "Successfully joined conversation room")
+                    else:
+                        self.log_test("Join Conversation Room", False, "Failed to join conversation room")
+                        
+                    # Test typing indicators
+                    await self.sio_client.emit('typing_start', {
+                        'conversation_id': self.conversation_id
+                    })
+                    await asyncio.sleep(0.5)
+                    
+                    await self.sio_client.emit('typing_stop', {
+                        'conversation_id': self.conversation_id
+                    })
+                    await asyncio.sleep(0.5)
+                    
+                    self.log_test("Typing Indicators", True, "Typing start/stop events sent successfully")
+                    
+                    # Test message read receipt
+                    if self.message_id:
+                        await self.sio_client.emit('message_read', {
+                            'message_id': self.message_id,
+                            'conversation_id': self.conversation_id
+                        })
+                        await asyncio.sleep(0.5)
+                        self.log_test("Socket.IO Read Receipt", True, "Read receipt event sent successfully")
+                    
+                    # Test real-time message broadcasting
+                    await self.sio_client.emit('send_message', {
+                        'conversation_id': self.conversation_id,
+                        'message': {
+                            'content': 'Real-time test message',
+                            'type': 'text'
+                        }
+                    })
+                    await asyncio.sleep(1)
+                    
+                    if any('new_message' in event for event in events_received):
+                        self.log_test("Real-time Message Broadcasting", True, "Message broadcast received")
+                    else:
+                        self.log_test("Real-time Message Broadcasting", False, "Message broadcast not received")
+                        
+                    await self.sio_client.disconnect()
+                    self.log_test("Socket.IO Disconnect", True, "Disconnected successfully")
+                    
+                else:
+                    self.log_test("Socket.IO Connection", False, "Failed to connect to Socket.IO server")
+                    return False
+                    
+            except asyncio.TimeoutError:
+                self.log_test("Socket.IO Connection", False, "Connection timeout - Socket.IO server may not be running or accessible")
+                return False
+            except Exception as conn_e:
+                self.log_test("Socket.IO Connection", False, f"Connection failed: {str(conn_e)}")
                 return False
                 
-            # Test authentication
-            await self.sio_client.emit('authenticate', {
-                'user_id': self.user1_id,
-                'token': self.user1_token
-            })
-            await asyncio.sleep(1)
-            
-            if any('authenticated' in event for event in events_received):
-                self.log_test("Socket.IO Authentication", True, "Successfully authenticated")
-            else:
-                self.log_test("Socket.IO Authentication", False, "Authentication failed")
-                
-            # Test joining conversation
-            await self.sio_client.emit('join_conversation', {
-                'conversation_id': self.conversation_id
-            })
-            await asyncio.sleep(1)
-            
-            if any('joined_conversation' in event for event in events_received):
-                self.log_test("Join Conversation Room", True, "Successfully joined conversation room")
-            else:
-                self.log_test("Join Conversation Room", False, "Failed to join conversation room")
-                
-            # Test typing indicators
-            await self.sio_client.emit('typing_start', {
-                'conversation_id': self.conversation_id
-            })
-            await asyncio.sleep(0.5)
-            
-            await self.sio_client.emit('typing_stop', {
-                'conversation_id': self.conversation_id
-            })
-            await asyncio.sleep(0.5)
-            
-            self.log_test("Typing Indicators", True, "Typing start/stop events sent successfully")
-            
-            # Test message read receipt
-            if self.message_id:
-                await self.sio_client.emit('message_read', {
-                    'message_id': self.message_id,
-                    'conversation_id': self.conversation_id
-                })
-                await asyncio.sleep(0.5)
-                self.log_test("Socket.IO Read Receipt", True, "Read receipt event sent successfully")
-            
-            # Test real-time message broadcasting
-            await self.sio_client.emit('send_message', {
-                'conversation_id': self.conversation_id,
-                'message': {
-                    'content': 'Real-time test message',
-                    'type': 'text'
-                }
-            })
-            await asyncio.sleep(1)
-            
-            if any('new_message' in event for event in events_received):
-                self.log_test("Real-time Message Broadcasting", True, "Message broadcast received")
-            else:
-                self.log_test("Real-time Message Broadcasting", False, "Message broadcast not received")
-                
-            await self.sio_client.disconnect()
-            self.log_test("Socket.IO Disconnect", True, "Disconnected successfully")
-            
             return True
             
         except Exception as e:
