@@ -386,16 +386,29 @@ async def send_connection_request(
 @api_router.get("/connections/requests")
 async def get_connection_requests(current_user: User = Depends(get_current_user)):
     # Get incoming requests
-    incoming_requests = await db.connection_requests.find({
+    incoming_cursor = db.connection_requests.find({
         "to_user_id": current_user.id,
         "status": "pending"
-    }).to_list(100)
+    })
+    incoming_docs = await incoming_cursor.to_list(100)
     
     # Get outgoing requests
-    outgoing_requests = await db.connection_requests.find({
+    outgoing_cursor = db.connection_requests.find({
         "from_user_id": current_user.id,
         "status": "pending"
-    }).to_list(100)
+    })
+    outgoing_docs = await outgoing_cursor.to_list(100)
+    
+    # Convert to serializable format
+    incoming_requests = []
+    for doc in incoming_docs:
+        request_data = ConnectionRequest(**{k: v for k, v in doc.items() if k != '_id'})
+        incoming_requests.append(request_data.dict())
+    
+    outgoing_requests = []
+    for doc in outgoing_docs:
+        request_data = ConnectionRequest(**{k: v for k, v in doc.items() if k != '_id'})
+        outgoing_requests.append(request_data.dict())
     
     return {
         "incoming": incoming_requests,
