@@ -49,7 +49,15 @@ sio = socketio.AsyncServer(
     engineio_logger=True
 )
 
-# Models
+# Import chat system
+from chat_models import *
+from chat_routes import chat_router
+from socket_handlers import ChatSocketHandler
+
+# Initialize chat handler
+chat_handler = ChatSocketHandler(sio)
+
+# Models (existing models remain the same)
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
@@ -107,7 +115,7 @@ class ConnectionRequest(BaseModel):
     status: str = "pending"  # pending, accepted, rejected
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-# Utility Functions
+# Utility Functions (remain the same)
 def hash_password(password: str) -> str:
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
@@ -155,29 +163,10 @@ def generate_verification_token() -> str:
 
 async def send_verification_email(email: str, token: str, name: str):
     # For now, we'll just log the verification link
-    # In production, you'd use SendGrid or similar
     verification_link = f"http://localhost:3000/verify-email?token={token}"
     print(f"Verification email for {name} ({email}): {verification_link}")
-    
-    # TODO: Implement actual email sending with SendGrid
-    # if os.environ.get('SENDGRID_API_KEY'):
-    #     message = Mail(
-    #         from_email='noreply@yourdomain.com',
-    #         to_emails=email,
-    #         subject='Verify your email address',
-    #         html_content=f'''
-    #         <h2>Welcome {name}!</h2>
-    #         <p>Please click the link below to verify your email address:</p>
-    #         <a href="{verification_link}">Verify Email</a>
-    #         '''
-    #     )
-    #     try:
-    #         sg = SendGridAPIClient(os.environ.get('SENDGRID_API_KEY'))
-    #         response = sg.send(message)
-    #     except Exception as e:
-    #         print(f"Error sending email: {e}")
 
-# Authentication Routes
+# Authentication Routes (remain the same)
 @api_router.post("/auth/register")
 async def register(user_data: UserCreate):
     # Check if email already exists
@@ -269,7 +258,7 @@ async def verify_email(token: str):
     
     return {"message": "Email verified successfully"}
 
-# User Profile Routes
+# User Profile Routes (remain the same)
 @api_router.get("/users/me", response_model=User)
 async def get_current_user_profile(current_user: User = Depends(get_current_user)):
     return current_user
@@ -303,7 +292,7 @@ async def update_profile(
     
     return {"message": "Profile updated successfully", "user": updated_user.dict()}
 
-# Search and Discovery Routes
+# Search and Discovery Routes (remain the same)
 @api_router.get("/users/search")
 async def search_users(
     country: Optional[str] = None,
@@ -348,7 +337,7 @@ async def search_users(
     
     return {"users": users, "total": len(users)}
 
-# Connection Routes
+# Connection Routes (remain the same)
 @api_router.post("/connections/request")
 async def send_connection_request(
     to_user_id: str,
@@ -441,29 +430,38 @@ async def respond_to_request(
         {"$set": {"status": new_status}}
     )
     
+    # If accepted, create a conversation between users
+    if action == "accept":
+        from chat_models import ConversationCreate, Conversation
+        
+        # Check if conversation already exists
+        existing_conversation = await db.conversations.find_one({
+            "participants": {"$all": [current_user.id, request_doc['from_user_id']], "$size": 2},
+            "is_group_chat": False
+        })
+        
+        if not existing_conversation:
+            # Create new conversation
+            conversation = Conversation(
+                participants=[current_user.id, request_doc['from_user_id']],
+                is_group_chat=False
+            )
+            await db.conversations.insert_one(conversation.dict())
+    
     return {"message": f"Connection request {new_status}"}
 
-# Socket.IO Events for real-time features
-@sio.event
-async def connect(sid, environ):
-    print(f"Client {sid} connected")
-
-@sio.event
-async def disconnect(sid):
-    print(f"Client {sid} disconnected")
-
-@sio.event
-async def join_user_room(sid, data):
-    user_id = data.get('user_id')
-    if user_id:
-        await sio.enter_room(sid, f"user_{user_id}")
-        print(f"User {user_id} joined their room")
-
-# Include routers
+# Include chat router
 app.include_router(api_router)
+app.include_router(chat_router)
 
 # Mount Socket.IO
 app.mount("/socket.io", socketio.ASGIApp(sio))
+
+# Start cleanup task
+@app.on_event("startup")
+async def startup_event():
+    from socket_handlers import cleanup_typing_indicators
+    asyncio.create_task(cleanup_typing_indicators())
 
 # CORS middleware
 app.add_middleware(
