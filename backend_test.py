@@ -92,10 +92,22 @@ def test_user_authentication():
     """Test user authentication to get access token"""
     print("\n🔐 Testing User Authentication...")
     
-    # Test with existing verified user
+    # Try to register a new user for testing
+    register_data = {
+        "email": "ai.test.new@stanford.edu",
+        "password": "testpass123",
+        "first_name": "AI",
+        "last_name": "TestUser",
+        "phone": "+1234567890"
+    }
+    
+    reg_response = make_request('POST', '/auth/register', register_data)
+    # Registration might fail if user already exists (400), which is fine
+    
+    # Try login
     login_data = {
-        "email": "john.doe@stanford.edu",
-        "password": "securepass123"
+        "email": "ai.test.new@stanford.edu",
+        "password": "testpass123"
     }
     
     response = make_request('POST', '/auth/login', login_data)
@@ -109,28 +121,6 @@ def test_user_authentication():
             test_results.add_result("User Authentication", False, "No access token in response")
             return None
     else:
-        # Try to register a new user for testing
-        register_data = {
-            "email": "ai.test.user@stanford.edu",
-            "password": "testpass123",
-            "first_name": "AI",
-            "last_name": "Tester",
-            "phone": "+1234567890"
-        }
-        
-        reg_response = make_request('POST', '/auth/register', register_data)
-        if reg_response and reg_response.status_code == 200:
-            # Try login again
-            login_response = make_request('POST', '/auth/login', {
-                "email": "ai.test.user@stanford.edu",
-                "password": "testpass123"
-            })
-            
-            if login_response and login_response.status_code == 200:
-                data = login_response.json()
-                test_results.add_result("User Authentication", True, "New user registered and logged in")
-                return data.get('access_token')
-        
         test_results.add_result("User Authentication", False, f"Login failed: {response.status_code if response else 'No response'}")
         return None
 
