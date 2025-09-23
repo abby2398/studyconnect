@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,19 +8,75 @@ import {
   TouchableOpacity,
   ScrollView,
   RefreshControl,
+  Image,
+  Dimensions,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
+
+const { width: screenWidth } = Dimensions.get('window');
+
+interface MediaAttachment {
+  id: string;
+  file_type: string;
+  mime_type: string;
+  file_size: number;
+  width?: number;
+  height?: number;
+  data: string;
+}
+
+interface Post {
+  id: string;
+  author_id: string;
+  content?: string;
+  post_type: string;
+  media_attachments: MediaAttachment[];
+  likes_count: number;
+  comments_count: number;
+  shares_count: number;
+  visibility: string;
+  hashtags: string[];
+  location?: string;
+  created_at: string;
+}
+
+interface PostWithDetails {
+  post: Post;
+  author: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    profile?: any;
+  };
+  is_liked: boolean;
+  is_shared: boolean;
+  user_can_interact: boolean;
+}
+
+interface User {
+  id: string;
+  first_name: string;
+  last_name: string;
+  is_verified: boolean;
+}
 
 export default function PostsScreen() {
-  const [user, setUser] = useState(null);
+  const [posts, setPosts] = useState<PostWithDetails[]>([]);
+  const [user, setUser] = useState<User | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  useEffect(() => {
-    loadUserData();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadUserData();
+      loadPosts();
+    }, [])
+  );
 
   const loadUserData = async () => {
     try {
@@ -33,21 +89,252 @@ export default function PostsScreen() {
     }
   };
 
+  const loadPosts = async () => {
+    try {
+      const token = await AsyncStorage.getItem('auth_token');
+      if (!token) return;
+
+      const response = await fetch(
+        `${process.env.EXPO_PUBLIC_BACKEND_URL}/api/posts/`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const postsData = await response.json();
+        setPosts(postsData);
+      }
+    } catch (error) {
+      console.error('Error loading posts:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadUserData();
+    await loadPosts();
     setRefreshing(false);
   };
 
   const handleCreatePost = () => {
-    // Navigate to create post screen
+    if (!user?.is_verified) {
+      Alert.alert(
+        'Verification Required',
+        'Only verified students can create posts. Please verify your email first.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
     router.push('/posts/create');
   };
 
-  const handleAskAI = () => {
-    // Navigate to AI assistant screen
-    router.push('/ai/assistant');
+  const handleLikePost = async (postId: string, isLiked: boolean) => {
+    try {
+      const token = await AsyncStorage.getItem('auth_token');
+      if (!token) return;
+
+      const url = `${process.env.EXPO_PUBLIC_BACKEND_URL}/api/posts/${postId}/like`;
+      const method = isLiked ? 'DELETE' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        // Update local state
+        setPosts(prevPosts => 
+          prevPosts.map(postItem => {
+            if (postItem.post.id === postId) {
+              return {
+                ...postItem,
+                is_liked: !isLiked,
+                post: {
+                  ...postItem.post,
+                  likes_count: isLiked 
+                    ? postItem.post.likes_count - 1 
+                    : postItem.post.likes_count + 1
+                }
+              };
+            }
+            return postItem;
+          })
+        );
+      }
+    } catch (error) {
+      console.error('Error liking post:', error);
+    }
   };
+
+  const formatTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m`;
+    if (hours < 24) return `${hours}h`;
+    if (days < 7) return `${days}d`;
+    
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric',
+      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    });
+  };
+
+  const renderMediaAttachment = (media: MediaAttachment) => {
+    if (media.file_type === 'image') {
+      const imageData = `data:${media.mime_type};base64,${media.data}`;
+      const aspectRatio = media.width && media.height ? media.width / media.height : 1;
+      const imageHeight = Math.min(300, screenWidth * 0.85 / aspectRatio);
+      
+      return (
+        <Image
+          key={media.id}
+          source={{ uri: imageData }}
+          style={[
+            styles.postImage,
+            { 
+              height: imageHeight,
+              aspectRatio: aspectRatio
+            }
+          ]}
+          resizeMode="cover"
+        />
+      );
+    }
+    
+    return (
+      <View key={media.id} style={styles.mediaPlaceholder}>
+        <Ionicons 
+          name={media.file_type === 'video' ? 'play-circle' : 'document'}
+          size={48} 
+          color="#a0a0a0" 
+        />
+        <Text style={styles.mediaPlaceholderText}>
+          {media.file_type === 'video' ? 'Video' : 'Media'} ({Math.round(media.file_size / 1024)} KB)
+        </Text>
+      </View>
+    );
+  };
+
+  const renderPost = (item: PostWithDetails) => {
+    const { post, author, is_liked } = item;
+    
+    return (
+      <View key={post.id} style={styles.postContainer}>
+        {/* Post Header */}
+        <View style={styles.postHeader}>
+          <View style={styles.authorInfo}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {author.first_name[0]}{author.last_name[0]}
+              </Text>
+            </View>
+            
+            <View style={styles.authorDetails}>
+              <Text style={styles.authorName}>
+                {author.first_name} {author.last_name}
+              </Text>
+              <Text style={styles.postTime}>
+                {formatTime(post.created_at)}
+                {post.location && (
+                  <Text style={styles.location}>
+                    {' • '}{post.location}
+                  </Text>
+                )}
+              </Text>
+            </View>
+          </View>
+          
+          <TouchableOpacity style={styles.moreButton}>
+            <Ionicons name="ellipsis-horizontal" size={20} color="#a0a0a0" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Post Content */}
+        {post.content && (
+          <Text style={styles.postContent}>{post.content}</Text>
+        )}
+
+        {/* Media Attachments */}
+        {post.media_attachments.length > 0 && (
+          <View style={styles.mediaContainer}>
+            {post.media_attachments.map(renderMediaAttachment)}
+          </View>
+        )}
+
+        {/* Hashtags */}
+        {post.hashtags.length > 0 && (
+          <View style={styles.hashtagsContainer}>
+            {post.hashtags.map(hashtag => (
+              <TouchableOpacity key={hashtag} style={styles.hashtag}>
+                <Text style={styles.hashtagText}>#{hashtag}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        {/* Post Actions */}
+        <View style={styles.postActions}>
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => handleLikePost(post.id, is_liked)}
+          >
+            <Ionicons 
+              name={is_liked ? "heart" : "heart-outline"} 
+              size={24} 
+              color={is_liked ? "#e74c3c" : "#a0a0a0"} 
+            />
+            <Text style={[
+              styles.actionText,
+              is_liked && styles.likedText
+            ]}>
+              {post.likes_count}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => router.push(`/posts/${post.id}/comments`)}
+          >
+            <Ionicons name="chatbubble-outline" size={24} color="#a0a0a0" />
+            <Text style={styles.actionText}>{post.comments_count}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionButton}>
+            <Ionicons name="arrow-redo-outline" size={24} color="#a0a0a0" />
+            <Text style={styles.actionText}>{post.shares_count}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionButton}>
+            <Ionicons name="bookmark-outline" size={24} color="#a0a0a0" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#1a1a2e" />
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading posts...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -59,15 +346,11 @@ export default function PostsScreen() {
         <View style={styles.headerActions}>
           <TouchableOpacity 
             style={styles.headerButton}
-            onPress={handleAskAI}
-            activeOpacity={0.8}
+            onPress={() => router.push('/ai/assistant')}
           >
             <Ionicons name="bulb-outline" size={24} color="#6c5ce7" />
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.headerButton}
-            activeOpacity={0.8}
-          >
+          <TouchableOpacity style={styles.headerButton}>
             <Ionicons name="notifications-outline" size={24} color="#ffffff" />
           </TouchableOpacity>
         </View>
@@ -111,75 +394,37 @@ export default function PostsScreen() {
             onPress={handleCreatePost}
             activeOpacity={0.8}
           >
-            <Ionicons name="add-circle-outline" size={24} color="#6c5ce7" />
+            <View style={styles.createPostAvatar}>
+              <Text style={styles.createPostAvatarText}>
+                {user ? `${user.first_name[0]}${user.last_name[0]}` : 'U'}
+              </Text>
+            </View>
             <Text style={styles.createPostText}>Share your journey...</Text>
+            <Ionicons name="add-circle-outline" size={24} color="#6c5ce7" />
           </TouchableOpacity>
         </View>
 
-        {/* Quick Actions */}
-        <View style={styles.quickActions}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <View style={styles.actionGrid}>
-            <TouchableOpacity 
-              style={styles.actionCard}
-              onPress={() => router.push('/(tabs)/search')}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="people-outline" size={32} color="#74b9ff" />
-              <Text style={styles.actionTitle}>Find Students</Text>
-              <Text style={styles.actionSubtitle}>Connect with peers</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.actionCard}
-              onPress={() => router.push('/(tabs)/events')}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="calendar-outline" size={32} color="#fd79a8" />
-              <Text style={styles.actionTitle}>Campus Events</Text>
-              <Text style={styles.actionSubtitle}>Discover activities</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.actionCard}
-              onPress={handleAskAI}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="bulb-outline" size={32} color="#fdcb6e" />
-              <Text style={styles.actionTitle}>Ask AI</Text>
-              <Text style={styles.actionSubtitle}>Get instant help</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.actionCard}
-              onPress={() => router.push('/(tabs)/chat')}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="chatbubble-outline" size={32} color="#55a3ff" />
-              <Text style={styles.actionTitle}>Messages</Text>
-              <Text style={styles.actionSubtitle}>Chat with friends</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Posts Feed Placeholder */}
-        <View style={styles.postsSection}>
-          <Text style={styles.sectionTitle}>Recent Posts</Text>
+        {/* Posts Feed */}
+        {posts.length > 0 ? (
+          posts.map(renderPost)
+        ) : (
           <View style={styles.emptyState}>
             <Ionicons name="document-text-outline" size={64} color="#666666" />
             <Text style={styles.emptyStateTitle}>No posts yet</Text>
             <Text style={styles.emptyStateText}>
               Be the first to share something with the community!
             </Text>
-            <TouchableOpacity 
-              style={styles.emptyStateButton}
-              onPress={handleCreatePost}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.emptyStateButtonText}>Create Post</Text>
-            </TouchableOpacity>
+            {user?.is_verified && (
+              <TouchableOpacity 
+                style={styles.emptyStateButton}
+                onPress={handleCreatePost}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.emptyStateButtonText}>Create Post</Text>
+              </TouchableOpacity>
+            )}
           </View>
-        </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -189,6 +434,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#a0a0a0',
   },
   header: {
     flexDirection: 'row',
@@ -265,59 +519,145 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#404040',
   },
+  createPostAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#6c5ce7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  createPostAvatarText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#ffffff',
+  },
   createPostText: {
     fontSize: 16,
     color: '#a0a0a0',
-    marginLeft: 12,
-  },
-  quickActions: {
-    marginHorizontal: 16,
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 16,
-  },
-  actionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  actionCard: {
     flex: 1,
-    minWidth: '47%',
-    backgroundColor: '#2a2a2a',
-    padding: 20,
-    borderRadius: 16,
-    alignItems: 'center',
   },
-  actionTitle: {
+  postContainer: {
+    backgroundColor: '#2a2a2a',
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  postHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    paddingBottom: 12,
+  },
+  authorInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#6c5ce7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  avatarText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#ffffff',
+  },
+  authorDetails: {
+    flex: 1,
+  },
+  authorName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#ffffff',
-    marginTop: 12,
-    marginBottom: 4,
-    textAlign: 'center',
+    marginBottom: 2,
   },
-  actionSubtitle: {
+  postTime: {
     fontSize: 12,
     color: '#a0a0a0',
-    textAlign: 'center',
   },
-  postsSection: {
-    marginHorizontal: 16,
-    marginBottom: 24,
+  location: {
+    color: '#6c5ce7',
+  },
+  moreButton: {
+    padding: 8,
+  },
+  postContent: {
+    fontSize: 16,
+    color: '#ffffff',
+    lineHeight: 22,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  mediaContainer: {
+    marginBottom: 12,
+  },
+  postImage: {
+    width: '100%',
+    backgroundColor: '#404040',
+  },
+  mediaPlaceholder: {
+    backgroundColor: '#404040',
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaPlaceholderText: {
+    fontSize: 14,
+    color: '#a0a0a0',
+    marginTop: 8,
+  },
+  hashtagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  hashtag: {
+    marginRight: 8,
+    marginBottom: 4,
+  },
+  hashtagText: {
+    fontSize: 14,
+    color: '#6c5ce7',
+    fontWeight: '500',
+  },
+  postActions: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#404040',
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 24,
+  },
+  actionText: {
+    fontSize: 14,
+    color: '#a0a0a0',
+    marginLeft: 6,
+    fontWeight: '500',
+  },
+  likedText: {
+    color: '#e74c3c',
   },
   emptyState: {
-    backgroundColor: '#2a2a2a',
-    padding: 40,
-    borderRadius: 16,
     alignItems: 'center',
+    paddingHorizontal: 40,
+    paddingVertical: 60,
   },
   emptyStateTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
     color: '#ffffff',
     marginTop: 16,
@@ -328,12 +668,12 @@ const styles = StyleSheet.create({
     color: '#a0a0a0',
     textAlign: 'center',
     lineHeight: 20,
-    marginBottom: 24,
+    marginBottom: 32,
   },
   emptyStateButton: {
     backgroundColor: '#6c5ce7',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
+    paddingHorizontal: 32,
+    paddingVertical: 16,
     borderRadius: 12,
   },
   emptyStateButtonText: {
