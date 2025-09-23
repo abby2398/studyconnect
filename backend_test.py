@@ -412,6 +412,8 @@ class BackendTester:
         success1 = self._test_send_connection_request()
         success2 = self._test_get_connection_requests()
         return success1 and success2
+    
+    def _test_get_connection_requests(self):
         """Test getting connection requests"""
         if len(self.auth_tokens) < 2:
             return False
