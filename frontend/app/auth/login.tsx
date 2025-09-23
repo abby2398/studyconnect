@@ -450,6 +450,17 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     marginLeft: 12,
   },
+  appleSocialButton: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  appleSocialText: {
+    color: '#000000',
+  },
+  githubSocialButton: {
+    backgroundColor: '#24292e',
+  },
   registerLink: {
     alignItems: 'center',
     paddingVertical: 16,
