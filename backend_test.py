@@ -221,11 +221,11 @@ class ChatSystemTester:
                             self.log_test("Get Conversations List", True, f"Retrieved {len(data)} conversations")
                             
                             # Check other participant details
-                            if conv["other_participant"] and "first_name" in conv["other_participant"]:
+                            if conv.get("other_participant") and isinstance(conv["other_participant"], dict) and "first_name" in conv["other_participant"]:
                                 self.log_test("Conversation Participant Details", True, 
                                             f"Other participant: {conv['other_participant']['first_name']}")
                             else:
-                                self.log_test("Conversation Participant Details", False, "Missing participant details")
+                                self.log_test("Conversation Participant Details", False, f"Missing participant details. Got: {conv.get('other_participant')}")
                         else:
                             self.log_test("Get Conversations List", False, "Missing required fields in response")
                     else:
