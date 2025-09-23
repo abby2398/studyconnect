@@ -957,6 +957,10 @@ app.include_router(api_router)
 from posts_routes import posts_router
 app.include_router(posts_router)
 
+# Import and include events router
+from events_routes import events_router
+app.include_router(events_router)
+
 # Mount Socket.IO
 app.mount("/socket.io", socketio.ASGIApp(sio))
 
