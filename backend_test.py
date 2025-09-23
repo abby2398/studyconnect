@@ -408,8 +408,37 @@ class BackendTester:
                 self.log_result("Connection System Setup", False, error_details=str(e))
                 return False
         
-        # Now test connection requests
-        return self._test_send_connection_request() and self._test_get_connection_requests()
+    def _test_get_connection_requests(self):
+        """Test getting connection requests"""
+        if len(self.auth_tokens) < 2:
+            return False
+            
+        tokens = list(self.auth_tokens.values())
+        user2_token = tokens[1]  # User2 should have incoming request
+        headers = {"Authorization": f"Bearer {user2_token}"}
+        
+        try:
+            response = self.session.get(f"{API_BASE}/connections/requests", headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if "incoming" in data and "outgoing" in data:
+                    incoming_count = len(data["incoming"])
+                    self.log_result("Get Connection Requests", True, 
+                                  f"Retrieved connection requests - Incoming: {incoming_count}")
+                    return True
+                else:
+                    self.log_result("Get Connection Requests", False, 
+                                  f"Missing request fields: {data}")
+                    return False
+            else:
+                self.log_result("Get Connection Requests", False, 
+                              f"Status: {response.status_code}, Response: {response.text}")
+                return False
+                
+        except Exception as e:
+            self.log_result("Get Connection Requests", False, error_details=str(e))
+            return False
     
     def _test_send_connection_request(self):
         """Test sending a connection request"""
