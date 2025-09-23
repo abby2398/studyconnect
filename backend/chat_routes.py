@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import List, Optional
-from .chat_models import *
-from .server import db, get_current_user, User
+from chat_models import *
+from server import db, get_current_user, User
 import asyncio
 from datetime import datetime
 
