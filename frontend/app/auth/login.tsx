@@ -331,18 +331,6 @@ export default function LoginScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.socialButton, styles.githubSocialButton]}
-              activeOpacity={0.8}
-              onPress={handleGitHubLogin}
-              disabled={loading}
-            >
-              <Ionicons name="logo-github" size={20} color="#ffffff" />
-              <Text style={styles.socialButtonText}>
-                Continue with GitHub
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
               style={styles.registerLink}
               onPress={() => router.push('/auth/register')}
               activeOpacity={0.8}
