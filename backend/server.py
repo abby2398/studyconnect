@@ -229,7 +229,15 @@ async def send_verification_email(email: str, token: str, name: str):
     verification_link = f"http://localhost:3000/verify-email?token={token}"
     print(f"Verification email for {name} ({email}): {verification_link}")
 
-# Authentication Routes
+# OAuth Callback Route (for handling redirects)
+@api_router.get("/auth/callback")
+async def oauth_callback():
+    """
+    Simple OAuth callback endpoint that redirects to the main app.
+    The actual session processing happens in the frontend.
+    """
+    return {"message": "OAuth callback received. Please close this window and return to the app."}
+
 # Google OAuth Models
 class GoogleOAuthData(BaseModel):
     google_data: Dict[str, Any]
