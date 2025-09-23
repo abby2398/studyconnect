@@ -17,12 +17,42 @@ def get_backend_url():
         with open('/app/frontend/.env', 'r') as f:
             for line in f:
                 if line.startswith('EXPO_PUBLIC_BACKEND_URL='):
-                    return line.split('=')[1].strip()
+                    external_url = line.split('=')[1].strip()
+                    print(f"External URL from .env: {external_url}")
+                    return external_url
     except:
         pass
     return "https://pathfinder-94.preview.emergentagent.com"
 
-BASE_URL = get_backend_url()
+# Try external URL first, fallback to localhost for testing
+EXTERNAL_URL = get_backend_url()
+LOCAL_URL = "http://localhost:8001"
+
+def get_working_base_url():
+    """Test both external and local URLs to find working one"""
+    import requests
+    
+    # Test external URL first
+    try:
+        response = requests.get(f"{EXTERNAL_URL}/docs", timeout=5)
+        if response.status_code == 200:
+            print(f"✅ External URL working: {EXTERNAL_URL}")
+            return EXTERNAL_URL
+    except:
+        print(f"❌ External URL not accessible: {EXTERNAL_URL}")
+    
+    # Fallback to local URL
+    try:
+        response = requests.get(f"{LOCAL_URL}/docs", timeout=5)
+        if response.status_code == 200:
+            print(f"✅ Local URL working: {LOCAL_URL}")
+            return LOCAL_URL
+    except:
+        print(f"❌ Local URL not accessible: {LOCAL_URL}")
+    
+    return LOCAL_URL  # Default fallback
+
+BASE_URL = get_working_base_url()
 API_BASE = f"{BASE_URL}/api"
 
 class BackendTester:
