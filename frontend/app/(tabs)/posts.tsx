@@ -11,6 +11,7 @@ import {
   Image,
   Dimensions,
   Alert,
+  Share as RNShare,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -69,12 +70,14 @@ export default function PostsScreen() {
   const [user, setUser] = useState<User | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [bookmarkedPosts, setBookmarkedPosts] = useState<Set<string>>(new Set());
   const router = useRouter();
 
   useFocusEffect(
     useCallback(() => {
       loadUserData();
       loadPosts();
+      loadBookmarks();
     }, [])
   );
 
@@ -111,6 +114,17 @@ export default function PostsScreen() {
       console.error('Error loading posts:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadBookmarks = async () => {
+    try {
+      const bookmarks = await AsyncStorage.getItem('bookmarked_posts');
+      if (bookmarks) {
+        setBookmarkedPosts(new Set(JSON.parse(bookmarks)));
+      }
+    } catch (error) {
+      console.error('Error loading bookmarks:', error);
     }
   };
 
@@ -172,6 +186,79 @@ export default function PostsScreen() {
     }
   };
 
+  const handleSharePost = async (postId: string, content?: string) => {
+    try {
+      // First share via backend API
+      const token = await AsyncStorage.getItem('auth_token');
+      if (token) {
+        const response = await fetch(
+          `${process.env.EXPO_PUBLIC_BACKEND_URL}/api/posts/${postId}/share`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (response.ok) {
+          // Update local state
+          setPosts(prevPosts => 
+            prevPosts.map(postItem => {
+              if (postItem.post.id === postId) {
+                return {
+                  ...postItem,
+                  is_shared: true,
+                  post: {
+                    ...postItem.post,
+                    shares_count: postItem.post.shares_count + 1
+                  }
+                };
+              }
+              return postItem;
+            })
+          );
+        }
+      }
+
+      // Then share via native sharing
+      const shareContent = content || 'Check out this post from StudyConnect!';
+      await RNShare.share({
+        message: shareContent,
+        title: 'StudyConnect Post',
+      });
+    } catch (error) {
+      console.error('Error sharing post:', error);
+    }
+  };
+
+  const handleBookmarkPost = async (postId: string) => {
+    try {
+      const newBookmarks = new Set(bookmarkedPosts);
+      
+      if (bookmarkedPosts.has(postId)) {
+        newBookmarks.delete(postId);
+        Alert.alert('Removed', 'Post removed from bookmarks');
+      } else {
+        newBookmarks.add(postId);
+        Alert.alert('Saved', 'Post added to bookmarks');
+      }
+      
+      setBookmarkedPosts(newBookmarks);
+      await AsyncStorage.setItem('bookmarked_posts', JSON.stringify([...newBookmarks]));
+    } catch (error) {
+      console.error('Error bookmarking post:', error);
+    }
+  };
+
+  const handleEditPost = (postId: string, authorId: string) => {
+    if (user?.id === authorId) {
+      router.push(`/posts/edit/${postId}`);
+    } else {
+      Alert.alert('Error', 'You can only edit your own posts');
+    }
+  };
+
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
     const now = new Date();
@@ -228,6 +315,44 @@ export default function PostsScreen() {
     );
   };
 
+  const renderPostMenu = (post: Post) => {
+    const isOwnPost = user?.id === post.author_id;
+    
+    return (
+      <TouchableOpacity 
+        style={styles.moreButton}
+        onPress={() => {
+          Alert.alert(
+            'Post Options',
+            '',
+            [
+              ...(isOwnPost ? [
+                {
+                  text: 'Edit Post',
+                  onPress: () => handleEditPost(post.id, post.author_id),
+                },
+              ] : []),
+              {
+                text: 'Share Post',
+                onPress: () => handleSharePost(post.id, post.content),
+              },
+              {
+                text: bookmarkedPosts.has(post.id) ? 'Remove Bookmark' : 'Bookmark',
+                onPress: () => handleBookmarkPost(post.id),
+              },
+              {
+                text: 'Cancel',
+                style: 'cancel',
+              },
+            ]
+          );
+        }}
+      >
+        <Ionicons name="ellipsis-horizontal" size={20} color="#a0a0a0" />
+      </TouchableOpacity>
+    );
+  };
+
   const renderPost = (item: PostWithDetails) => {
     const { post, author, is_liked } = item;
     
@@ -236,16 +361,21 @@ export default function PostsScreen() {
         {/* Post Header */}
         <View style={styles.postHeader}>
           <View style={styles.authorInfo}>
-            <View style={styles.avatar}>
+            <TouchableOpacity 
+              style={styles.avatar}
+              onPress={() => router.push(`/users/profile/${author.id}`)}
+            >
               <Text style={styles.avatarText}>
                 {author.first_name[0]}{author.last_name[0]}
               </Text>
-            </View>
+            </TouchableOpacity>
             
             <View style={styles.authorDetails}>
-              <Text style={styles.authorName}>
-                {author.first_name} {author.last_name}
-              </Text>
+              <TouchableOpacity onPress={() => router.push(`/users/profile/${author.id}`)}>
+                <Text style={styles.authorName}>
+                  {author.first_name} {author.last_name}
+                </Text>
+              </TouchableOpacity>
               <Text style={styles.postTime}>
                 {formatTime(post.created_at)}
                 {post.location && (
@@ -257,9 +387,7 @@ export default function PostsScreen() {
             </View>
           </View>
           
-          <TouchableOpacity style={styles.moreButton}>
-            <Ionicons name="ellipsis-horizontal" size={20} color="#a0a0a0" />
-          </TouchableOpacity>
+          {renderPostMenu(post)}
         </View>
 
         {/* Post Content */}
@@ -312,13 +440,23 @@ export default function PostsScreen() {
             <Text style={styles.actionText}>{post.comments_count}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionButton}>
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => handleSharePost(post.id, post.content)}
+          >
             <Ionicons name="arrow-redo-outline" size={24} color="#a0a0a0" />
             <Text style={styles.actionText}>{post.shares_count}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionButton}>
-            <Ionicons name="bookmark-outline" size={24} color="#a0a0a0" />
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => handleBookmarkPost(post.id)}
+          >
+            <Ionicons 
+              name={bookmarkedPosts.has(post.id) ? "bookmark" : "bookmark-outline"} 
+              size={24} 
+              color={bookmarkedPosts.has(post.id) ? "#6c5ce7" : "#a0a0a0"} 
+            />
           </TouchableOpacity>
         </View>
       </View>
