@@ -311,9 +311,9 @@ class ConnectionSystemTester:
         # Test connection request to non-existent user
         try:
             fake_user_id = str(uuid.uuid4())
-            request_data = {"to_user_id": fake_user_id}
+            params = {"to_user_id": fake_user_id}
             response = self.session.post(f"{self.base_url}/connections/request", 
-                                       json=request_data, headers=headers1)
+                                       params=params, headers=headers1)
             
             if response.status_code == 404:
                 self.log_test("POST /api/connections/request (non-existent)", True, "Correctly rejected request to non-existent user")
