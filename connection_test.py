@@ -277,12 +277,12 @@ class ConnectionSystemTester:
         # Test POST /api/connections/respond - Accept connection request
         if hasattr(self, 'pending_request_id') and self.pending_request_id:
             try:
-                response_data = {
+                params = {
                     "request_id": self.pending_request_id,
                     "action": "accept"
                 }
                 response = self.session.post(f"{self.base_url}/connections/respond", 
-                                           json=response_data, headers=headers2)
+                                           params=params, headers=headers2)
                 
                 if response.status_code == 200:
                     self.log_test("POST /api/connections/respond (accept)", True, "Connection request accepted successfully")
