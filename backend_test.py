@@ -602,6 +602,12 @@ class BackendTester:
         print("🤝 CONNECTION SYSTEM TESTS")
         print("-" * 30)
         self.test_connection_system()
+        self.test_connection_response()
+        
+        # Additional Tests
+        print("🔍 ADDITIONAL TESTS")
+        print("-" * 30)
+        self.test_email_verification_invalid_token()
         
         # Summary
         print("=" * 60)
