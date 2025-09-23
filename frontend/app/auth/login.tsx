@@ -106,7 +106,21 @@ export default function LoginScreen() {
     }
   };
 
-  const processGoogleSession = async (sessionId: string) => {
+  const handleAppleLogin = async () => {
+    Alert.alert(
+      'Coming Soon',
+      'Apple Sign-In will be available soon! For now, please use Google OAuth or create an account with email.',
+      [{ text: 'OK' }]
+    );
+  };
+
+  const handleGitHubLogin = async () => {
+    Alert.alert(
+      'Coming Soon', 
+      'GitHub OAuth will be available soon! For now, please use Google OAuth or create an account with email.',
+      [{ text: 'OK' }]
+    );
+  };
     try {
       console.log('Processing Google session:', sessionId);
       
