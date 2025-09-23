@@ -305,6 +305,30 @@ export default function LoginScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
+              style={[styles.socialButton, styles.appleSocialButton]}
+              activeOpacity={0.8}
+              onPress={handleAppleLogin}
+              disabled={loading}
+            >
+              <Ionicons name="logo-apple" size={20} color="#000000" />
+              <Text style={[styles.socialButtonText, styles.appleSocialText]}>
+                Continue with Apple
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.socialButton, styles.githubSocialButton]}
+              activeOpacity={0.8}
+              onPress={handleGitHubLogin}
+              disabled={loading}
+            >
+              <Ionicons name="logo-github" size={20} color="#ffffff" />
+              <Text style={styles.socialButtonText}>
+                Continue with GitHub
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={styles.registerLink}
               onPress={() => router.push('/auth/register')}
               activeOpacity={0.8}
