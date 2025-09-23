@@ -291,9 +291,17 @@ export default function LoginScreen() {
             <TouchableOpacity
               style={styles.socialButton}
               activeOpacity={0.8}
+              onPress={handleGoogleLogin}
+              disabled={googleLoading || loading}
             >
-              <Ionicons name="logo-google" size={20} color="#ffffff" />
-              <Text style={styles.socialButtonText}>Continue with Google</Text>
+              {googleLoading ? (
+                <Ionicons name="refresh" size={20} color="#ffffff" />
+              ) : (
+                <Ionicons name="logo-google" size={20} color="#ffffff" />
+              )}
+              <Text style={styles.socialButtonText}>
+                {googleLoading ? 'Connecting...' : 'Continue with Google'}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
