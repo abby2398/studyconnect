@@ -315,6 +315,16 @@ export default function ProfileScreen() {
 
         {/* Account Actions */}
         <View style={styles.actionsSection}>
+          <TouchableOpacity 
+            style={styles.actionItem} 
+            activeOpacity={0.8}
+            onPress={() => router.push('/connections')}
+          >
+            <Ionicons name="people-outline" size={24} color="#6c5ce7" />
+            <Text style={styles.actionTitle}>My Connections</Text>
+            <Ionicons name="chevron-forward" size={20} color="#a0a0a0" />
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.actionItem} activeOpacity={0.8}>
             <Ionicons name="shield-checkmark-outline" size={24} color="#00b894" />
             <Text style={styles.actionTitle}>Privacy Settings</Text>
