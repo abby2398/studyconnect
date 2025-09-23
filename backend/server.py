@@ -230,6 +230,94 @@ async def send_verification_email(email: str, token: str, name: str):
     print(f"Verification email for {name} ({email}): {verification_link}")
 
 # Authentication Routes
+# Google OAuth Models
+class GoogleOAuthData(BaseModel):
+    google_data: Dict[str, Any]
+    session_token: str
+
+# Authentication Routes
+@api_router.post("/auth/google-oauth")
+async def google_oauth_login(oauth_data: GoogleOAuthData):
+    try:
+        google_user = oauth_data.google_data
+        
+        # Extract user information from Google data
+        email = google_user.get('email', '')
+        name = google_user.get('name', '')
+        picture = google_user.get('picture', '')
+        
+        # Validate that we have minimum required data
+        if not email:
+            raise HTTPException(status_code=400, detail="Email is required from Google OAuth")
+        
+        # Split name into first and last name
+        name_parts = name.split(' ', 1) if name else ['', '']
+        first_name = name_parts[0] if len(name_parts) > 0 else ''
+        last_name = name_parts[1] if len(name_parts) > 1 else ''
+        
+        # Check if user already exists
+        existing_user = await db.users.find_one({"email": email})
+        
+        if existing_user:
+            # User exists, just login
+            user = User(**{k: v for k, v in existing_user.items() if k != 'password'})
+            
+            # Update profile picture if we have one from Google
+            if picture and (not user.profile or not user.profile.profile_picture):
+                update_data = {}
+                if user.profile:
+                    update_data['profile'] = user.profile.dict()
+                    update_data['profile']['profile_picture'] = picture
+                else:
+                    update_data['profile'] = {'profile_picture': picture}
+                
+                update_data['updated_at'] = datetime.utcnow()
+                await db.users.update_one({"id": user.id}, {"$set": update_data})
+        else:
+            # Create new user (only for .edu emails)
+            if not is_edu_email(email):
+                raise HTTPException(status_code=400, detail="Only .edu email addresses are allowed")
+            
+            # Create new user with Google data
+            user = User(
+                email=email,
+                first_name=first_name or 'User',
+                last_name=last_name or '',
+                is_verified=True,  # Google OAuth users are considered verified
+                profile=UserProfile(
+                    profile_picture=picture
+                ) if picture else None
+            )
+            
+            # Store user (no password needed for OAuth users)
+            user_dict = user.dict()
+            user_dict['oauth_provider'] = 'google'
+            user_dict['oauth_id'] = google_user.get('id', '')
+            
+            await db.users.insert_one(user_dict)
+        
+        # Create access token
+        access_token = create_access_token(data={"sub": user.id})
+        
+        # Store session token (optional - for session management)
+        session_data = {
+            "user_id": user.id,
+            "session_token": oauth_data.session_token,
+            "created_at": datetime.utcnow(),
+            "expires_at": datetime.utcnow() + timedelta(days=7)
+        }
+        await db.sessions.insert_one(session_data)
+        
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": user.dict()
+        }
+        
+    except Exception as e:
+        print(f"Google OAuth error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to process Google authentication")
+
 @api_router.post("/auth/register")
 async def register(user_data: UserCreate):
     # Check if email already exists
