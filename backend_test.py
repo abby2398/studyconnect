@@ -70,17 +70,20 @@ def make_request(method, endpoint, data=None, headers=None, params=None):
         url = f"{API_BASE}{endpoint}"
         
         if method.upper() == 'GET':
-            response = requests.get(url, headers=headers, params=params, timeout=30)
+            response = requests.get(url, headers=headers, params=params, timeout=60)
         elif method.upper() == 'POST':
-            response = requests.post(url, json=data, headers=headers, params=params, timeout=30)
+            response = requests.post(url, json=data, headers=headers, params=params, timeout=60)
         elif method.upper() == 'PUT':
-            response = requests.put(url, json=data, headers=headers, params=params, timeout=30)
+            response = requests.put(url, json=data, headers=headers, params=params, timeout=60)
         elif method.upper() == 'DELETE':
-            response = requests.delete(url, headers=headers, params=params, timeout=30)
+            response = requests.delete(url, headers=headers, params=params, timeout=60)
         else:
             raise ValueError(f"Unsupported method: {method}")
         
         return response
+    except requests.exceptions.Timeout:
+        print(f"Request timed out for {method} {endpoint}")
+        return None
     except requests.exceptions.RequestException as e:
         print(f"Request failed: {str(e)}")
         return None
