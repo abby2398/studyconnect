@@ -31,6 +31,7 @@ type LoginFormData = z.infer<typeof loginSchema>;
 
 export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const router = useRouter();
 
@@ -45,6 +46,122 @@ export default function LoginScreen() {
       password: '',
     },
   });
+
+  // Check for existing session or process Google OAuth callback
+  useEffect(() => {
+    checkExistingSession();
+  }, []);
+
+  const checkExistingSession = async () => {
+    try {
+      const token = await AsyncStorage.getItem('auth_token');
+      const userData = await AsyncStorage.getItem('user_data');
+      
+      if (token && userData) {
+        // User is already logged in, redirect to main app
+        router.replace('/(tabs)/posts');
+        return;
+      }
+    } catch (error) {
+      console.error('Error checking existing session:', error);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true);
+    
+    try {
+      // Redirect URL should be the main app route (posts feed)
+      const redirectUrl = `${process.env.EXPO_PUBLIC_BACKEND_URL}/auth/callback`;
+      const authUrl = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+      
+      console.log('Opening Google OAuth URL:', authUrl);
+      
+      // Open the OAuth URL in browser
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
+      
+      if (result.type === 'success') {
+        const url = result.url;
+        console.log('OAuth callback URL:', url);
+        
+        // Extract session_id from URL fragment
+        const sessionIdMatch = url.match(/#session_id=([^&]+)/);
+        if (sessionIdMatch) {
+          const sessionId = sessionIdMatch[1];
+          await processGoogleSession(sessionId);
+        } else {
+          throw new Error('No session ID found in callback URL');
+        }
+      } else {
+        console.log('OAuth cancelled or failed:', result);
+      }
+    } catch (error) {
+      console.error('Google OAuth error:', error);
+      Alert.alert(
+        'Authentication Error', 
+        'Failed to authenticate with Google. Please try again.'
+      );
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const processGoogleSession = async (sessionId: string) => {
+    try {
+      console.log('Processing Google session:', sessionId);
+      
+      // Get session data from Emergent auth service
+      const response = await fetch('https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data', {
+        method: 'GET',
+        headers: {
+          'X-Session-ID': sessionId,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get session data from auth service');
+      }
+
+      const sessionData = await response.json();
+      console.log('Session data received:', sessionData);
+
+      // Process the Google OAuth data through our backend
+      const backendResponse = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/auth/google-oauth`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          google_data: sessionData,
+          session_token: sessionData.session_token,
+        }),
+      });
+
+      if (backendResponse.ok) {
+        const result = await backendResponse.json();
+        
+        // Store auth data
+        await AsyncStorage.setItem('auth_token', result.access_token);
+        await AsyncStorage.setItem('user_data', JSON.stringify(result.user));
+        
+        Alert.alert('Success', 'Logged in with Google successfully!', [
+          {
+            text: 'OK',
+            onPress: () => router.replace('/(tabs)/posts'),
+          },
+        ]);
+      } else {
+        const errorResult = await backendResponse.json();
+        throw new Error(errorResult.detail || 'Failed to process Google authentication');
+      }
+    } catch (error) {
+      console.error('Error processing Google session:', error);
+      Alert.alert(
+        'Authentication Error',
+        error instanceof Error ? error.message : 'Failed to process Google authentication'
+      );
+    }
+  };
 
   const onSubmit = async (data: LoginFormData) => {
     setLoading(true);
