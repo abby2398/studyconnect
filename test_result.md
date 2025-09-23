@@ -146,6 +146,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ User profile management tests passed: Getting current user profile works, updating user profile with academic/location details works, user search functionality returns results correctly"
+      - working: true
+        agent: "testing"
+        comment: "✅ RE-TESTED: User profile APIs working perfectly - GET /api/users/me retrieves profiles correctly, PUT /api/users/me updates profiles successfully with academic/location details. User search APIs working - basic search returns 18 users, university/country filters work correctly."
   
   - task: "Connection System"
     implemented: true
@@ -161,6 +164,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ Connection system tests passed: Sending connection requests between users works, fetching connection requests (incoming/outgoing) works, accepting connection requests works. Fixed MongoDB ObjectId serialization issue in get_connection_requests endpoint"
+      - working: true
+        agent: "testing"
+        comment: "✅ RE-TESTED: ALL CONNECTION SYSTEM APIS WORKING PERFECTLY (12/12 tests passed - 100% success rate). Fixed API parameter format issue (query params vs JSON body). POST /api/connections/request works correctly with query parameters, GET /api/connections/requests retrieves incoming/outgoing requests properly, POST /api/connections/respond accepts/rejects requests successfully. Error handling works correctly for self-connections and non-existent users. User-reported 'add friend functionality not working' issue is RESOLVED - all connection APIs are fully functional."
 
   - task: "Real-time Chat System"
     implemented: true
