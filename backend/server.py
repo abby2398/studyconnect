@@ -50,9 +50,9 @@ sio = socketio.AsyncServer(
 )
 
 # Import chat system
-from .chat_models import *
-from .chat_routes import chat_router
-from .socket_handlers import ChatSocketHandler
+from chat_models import *
+from chat_routes import chat_router
+from socket_handlers import ChatSocketHandler
 
 # Initialize chat handler
 chat_handler = ChatSocketHandler(sio)
