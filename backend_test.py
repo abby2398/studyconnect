@@ -220,12 +220,18 @@ class ChatSystemTester:
                         if all(field in conv for field in required_fields):
                             self.log_test("Get Conversations List", True, f"Retrieved {len(data)} conversations")
                             
-                            # Check other participant details
-                            if conv.get("other_participant") and isinstance(conv["other_participant"], dict) and "first_name" in conv["other_participant"]:
+                            # Find a 1-on-1 conversation to check participant details
+                            one_on_one_conv = None
+                            for c in data:
+                                if not c["conversation"]["is_group_chat"]:
+                                    one_on_one_conv = c
+                                    break
+                            
+                            if one_on_one_conv and one_on_one_conv.get("other_participant") and isinstance(one_on_one_conv["other_participant"], dict) and "first_name" in one_on_one_conv["other_participant"]:
                                 self.log_test("Conversation Participant Details", True, 
-                                            f"Other participant: {conv['other_participant']['first_name']}")
+                                            f"Other participant: {one_on_one_conv['other_participant']['first_name']}")
                             else:
-                                self.log_test("Conversation Participant Details", False, f"Missing participant details. Got: {conv.get('other_participant')}")
+                                self.log_test("Conversation Participant Details", False, f"Missing participant details in 1-on-1 conversation. Got: {one_on_one_conv.get('other_participant') if one_on_one_conv else 'No 1-on-1 conversation found'}")
                         else:
                             self.log_test("Get Conversations List", False, "Missing required fields in response")
                     else:
