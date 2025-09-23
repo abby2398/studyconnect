@@ -371,36 +371,45 @@ def test_ai_error_handling(token):
     headers = {"Authorization": f"Bearer {token}"}
     
     # Test 1: Empty message
+    print("Testing empty message validation...")
     empty_message = {"message": "", "context": {}}
     response = make_request('POST', '/ai/chat/send', empty_message, headers)
     
-    if response and response.status_code == 422:  # Validation error
+    if response is None:
+        test_results.add_result("AI Error Handling - Empty Message", False, "Request timeout or connection error")
+    elif response.status_code == 422:  # Validation error
         test_results.add_result("AI Error Handling - Empty Message", True, 
                               "Correctly rejected empty message")
     else:
         test_results.add_result("AI Error Handling - Empty Message", False, 
-                              f"Should reject empty message: {response.status_code if response else 'No response'}")
+                              f"Expected 422, got {response.status_code}")
     
     # Test 2: Very long message
+    print("Testing long message validation...")
     long_message = {"message": "x" * 3000, "context": {}}  # Exceeds 2000 char limit
     response = make_request('POST', '/ai/chat/send', long_message, headers)
     
-    if response and response.status_code == 422:  # Validation error
+    if response is None:
+        test_results.add_result("AI Error Handling - Long Message", False, "Request timeout or connection error")
+    elif response.status_code == 422:  # Validation error
         test_results.add_result("AI Error Handling - Long Message", True, 
                               "Correctly rejected overly long message")
     else:
         test_results.add_result("AI Error Handling - Long Message", False, 
-                              f"Should reject long message: {response.status_code if response else 'No response'}")
+                              f"Expected 422, got {response.status_code}")
     
     # Test 3: Invalid session ID for deletion
+    print("Testing invalid session deletion...")
     response = make_request('DELETE', '/ai/chat/nonexistent_session', headers=headers)
     
-    if response and response.status_code == 404:
+    if response is None:
+        test_results.add_result("AI Error Handling - Invalid Session", False, "Request timeout or connection error")
+    elif response.status_code == 404:
         test_results.add_result("AI Error Handling - Invalid Session", True, 
                               "Correctly handled invalid session ID")
     else:
         test_results.add_result("AI Error Handling - Invalid Session", False, 
-                              f"Should return 404 for invalid session: {response.status_code if response else 'No response'}")
+                              f"Expected 404, got {response.status_code}")
 
 def main():
     """Main test execution"""
