@@ -173,7 +173,11 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          <TouchableOpacity style={styles.editProfileButton} activeOpacity={0.8}>
+          <TouchableOpacity 
+            style={styles.editProfileButton} 
+            activeOpacity={0.8}
+            onPress={() => router.push('/profile/edit')}
+          >
             <Text style={styles.editProfileText}>Edit Profile</Text>
             <Ionicons name="chevron-forward" size={16} color="#6c5ce7" />
           </TouchableOpacity>
