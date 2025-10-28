@@ -112,9 +112,18 @@ export default function ProfileScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Profile</Text>
-        <TouchableOpacity style={styles.headerButton}>
-          <Ionicons name="settings-outline" size={24} color="#ffffff" />
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={() => router.push('/notifications')}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="notifications-outline" size={24} color="#ffffff" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerButton}>
+            <Ionicons name="settings-outline" size={24} color="#ffffff" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
