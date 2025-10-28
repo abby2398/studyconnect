@@ -1,68 +1,117 @@
 #!/usr/bin/env python3
 """
-Backend API Testing for International Student Networking App
-Focus: AI Assistant System Testing
+Comprehensive Backend Testing for StudyConnect Notification System
+Tests all notification APIs, preferences, push tokens, and integration features
 """
 
+import asyncio
 import requests
 import json
-import time
-from datetime import datetime
+import uuid
+from datetime import datetime, timedelta
+from typing import Dict, List, Any, Optional
 import os
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv('/app/frontend/.env')
 
-# Get backend URL from environment
-BACKEND_URL = os.getenv('EXPO_PUBLIC_BACKEND_URL', 'http://localhost:8001')
+# Configuration
+BACKEND_URL = os.getenv('EXPO_PUBLIC_BACKEND_URL', 'https://campuslink-25.preview.emergentagent.com')
 API_BASE = f"{BACKEND_URL}/api"
 
-print(f"Testing backend at: {API_BASE}")
-
-class TestResults:
+class NotificationSystemTester:
     def __init__(self):
-        self.passed = 0
-        self.failed = 0
-        self.results = []
-    
-    def add_result(self, test_name, passed, message="", details=None):
-        status = "✅ PASS" if passed else "❌ FAIL"
-        result = f"{status}: {test_name}"
-        if message:
-            result += f" - {message}"
+        self.session = requests.Session()
+        self.test_users = []
+        self.auth_tokens = {}
+        self.test_notifications = []
+        self.test_push_tokens = []
         
-        print(result)
-        self.results.append({
-            'test': test_name,
-            'passed': passed,
-            'message': message,
-            'details': details
-        })
-        
-        if passed:
-            self.passed += 1
-        else:
-            self.failed += 1
-    
-    def print_summary(self):
-        total = self.passed + self.failed
-        print(f"\n{'='*60}")
-        print(f"AI ASSISTANT SYSTEM TEST SUMMARY")
-        print(f"{'='*60}")
-        print(f"Total Tests: {total}")
-        print(f"Passed: {self.passed}")
-        print(f"Failed: {self.failed}")
-        print(f"Success Rate: {(self.passed/total*100):.1f}%" if total > 0 else "0%")
-        
-        if self.failed > 0:
-            print(f"\n❌ FAILED TESTS:")
-            for result in self.results:
-                if not result['passed']:
-                    print(f"  - {result['test']}: {result['message']}")
+    def log_test(self, test_name: str, status: str, details: str = ""):
+        """Log test results"""
+        status_emoji = "✅" if status == "PASS" else "❌" if status == "FAIL" else "⚠️"
+        print(f"{status_emoji} {test_name}: {status}")
+        if details:
+            print(f"   Details: {details}")
+        print()
 
-# Global test results
-test_results = TestResults()
+    def create_test_user_data(self, suffix: str = "") -> Dict[str, Any]:
+        """Create test user data"""
+        unique_id = str(uuid.uuid4())[:8]
+        return {
+            "email": f"testuser{suffix}_{unique_id}@university.edu",
+            "password": "TestPassword123!",
+            "first_name": f"Test{suffix}",
+            "last_name": f"User{unique_id}",
+            "phone": "+1234567890"
+        }
+
+    def register_and_login_user(self, user_data: Dict[str, Any]) -> Optional[str]:
+        """Register and login a test user, return auth token"""
+        try:
+            # Register user
+            register_response = self.session.post(
+                f"{API_BASE}/auth/register",
+                json=user_data,
+                timeout=10
+            )
+            
+            if register_response.status_code != 200:
+                print(f"Registration failed: {register_response.text}")
+                return None
+            
+            # Login user
+            login_response = self.session.post(
+                f"{API_BASE}/auth/login",
+                json={
+                    "email": user_data["email"],
+                    "password": user_data["password"]
+                },
+                timeout=10
+            )
+            
+            if login_response.status_code == 200:
+                login_data = login_response.json()
+                return login_data.get("access_token")
+            else:
+                print(f"Login failed: {login_response.text}")
+                return None
+                
+        except Exception as e:
+            print(f"Error in register_and_login_user: {str(e)}")
+            return None
+
+    def setup_test_users(self) -> bool:
+        """Setup test users for notification testing"""
+        try:
+            print("🔧 Setting up test users for notification testing...")
+            
+            # Create two test users
+            for i in range(2):
+                user_data = self.create_test_user_data(f"_notif_{i}")
+                token = self.register_and_login_user(user_data)
+                
+                if token:
+                    self.test_users.append(user_data)
+                    self.auth_tokens[user_data["email"]] = token
+                    print(f"✅ Created test user: {user_data['email']}")
+                else:
+                    print(f"❌ Failed to create test user: {user_data['email']}")
+                    return False
+            
+            return len(self.test_users) >= 2
+            
+        except Exception as e:
+            print(f"❌ Error setting up test users: {str(e)}")
+            return False
+
+    def get_auth_headers(self, user_email: str) -> Dict[str, str]:
+        """Get authorization headers for a user"""
+        token = self.auth_tokens.get(user_email)
+        if token:
+            return {"Authorization": f"Bearer {token}"}
+        return {}
 
 def make_request(method, endpoint, data=None, headers=None, params=None):
     """Make HTTP request with error handling"""
