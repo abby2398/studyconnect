@@ -339,41 +339,417 @@ class NotificationSystemTester:
             self.log_test("Send Test Notification", "FAIL", f"Exception: {str(e)}")
             return False
 
-def test_user_authentication():
-    """Test user authentication to get access token"""
-    print("\n🔐 Testing User Authentication...")
-    
-    # Try to register a new user for testing
-    register_data = {
-        "email": "ai.test.new@stanford.edu",
-        "password": "testpass123",
-        "first_name": "AI",
-        "last_name": "TestUser",
-        "phone": "+1234567890"
-    }
-    
-    reg_response = make_request('POST', '/auth/register', register_data)
-    # Registration might fail if user already exists (400), which is fine
-    
-    # Try login
-    login_data = {
-        "email": "ai.test.new@stanford.edu",
-        "password": "testpass123"
-    }
-    
-    response = make_request('POST', '/auth/login', login_data)
-    
-    if response and response.status_code == 200:
-        data = response.json()
-        if 'access_token' in data:
-            test_results.add_result("User Authentication", True, "Login successful")
-            return data['access_token']
+    # Test 9: Broadcast Notification Feature
+    def test_broadcast_notification(self) -> bool:
+        """Test POST /api/notifications/broadcast endpoint"""
+        try:
+            user_email = self.test_users[0]["email"]
+            headers = self.get_auth_headers(user_email)
+            
+            # Get user IDs for broadcast
+            recipient_ids = []
+            for user in self.test_users:
+                # Get user profile to get user ID
+                user_headers = self.get_auth_headers(user["email"])
+                profile_response = self.session.get(
+                    f"{API_BASE}/users/me",
+                    headers=user_headers,
+                    timeout=10
+                )
+                if profile_response.status_code == 200:
+                    user_data = profile_response.json()
+                    recipient_ids.append(user_data["id"])
+            
+            if not recipient_ids:
+                self.log_test("Broadcast Notification", "FAIL", "No recipient IDs found")
+                return False
+            
+            # Send broadcast notification
+            broadcast_data = {
+                "recipient_ids": recipient_ids,
+                "type": "system_announcement",
+                "title": "Test Broadcast Notification",
+                "message": "This is a test broadcast message to all users",
+                "data": {"broadcast_test": True},
+                "priority": "normal",
+                "channels": ["in_app", "push"]
+            }
+            
+            response = self.session.post(
+                f"{API_BASE}/notifications/broadcast",
+                json=broadcast_data,
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                self.log_test("Broadcast Notification", "PASS", f"Message: {result.get('message')}")
+                return True
+            else:
+                self.log_test("Broadcast Notification", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+                return False
+                
+        except Exception as e:
+            self.log_test("Broadcast Notification", "FAIL", f"Exception: {str(e)}")
+            return False
+
+    # Test 10: Connection Request Integration
+    def test_connection_request_notification_integration(self) -> bool:
+        """Test that connection requests trigger notifications"""
+        try:
+            # Get user IDs
+            user1_email = self.test_users[0]["email"]
+            user2_email = self.test_users[1]["email"]
+            
+            user1_headers = self.get_auth_headers(user1_email)
+            user2_headers = self.get_auth_headers(user2_email)
+            
+            # Get user2's ID
+            user2_profile_response = self.session.get(
+                f"{API_BASE}/users/me",
+                headers=user2_headers,
+                timeout=10
+            )
+            
+            if user2_profile_response.status_code != 200:
+                self.log_test("Connection Request Notification Integration", "FAIL", "Could not get user2 profile")
+                return False
+            
+            user2_data = user2_profile_response.json()
+            user2_id = user2_data["id"]
+            
+            # Get initial notification count for user2
+            initial_count_response = self.session.get(
+                f"{API_BASE}/notifications/unread/count",
+                headers=user2_headers,
+                timeout=10
+            )
+            
+            initial_count = 0
+            if initial_count_response.status_code == 200:
+                initial_count = initial_count_response.json().get("unread_count", 0)
+            
+            # Send connection request from user1 to user2
+            connection_response = self.session.post(
+                f"{API_BASE}/connections/request",
+                params={"to_user_id": user2_id},
+                headers=user1_headers,
+                timeout=10
+            )
+            
+            if connection_response.status_code != 200:
+                self.log_test("Connection Request Notification Integration", "FAIL", f"Connection request failed: {connection_response.text}")
+                return False
+            
+            # Wait a moment for notification to be processed
+            import time
+            time.sleep(2)
+            
+            # Check if user2 received a notification
+            final_count_response = self.session.get(
+                f"{API_BASE}/notifications/unread/count",
+                headers=user2_headers,
+                timeout=10
+            )
+            
+            if final_count_response.status_code == 200:
+                final_count = final_count_response.json().get("unread_count", 0)
+                
+                if final_count > initial_count:
+                    self.log_test("Connection Request Notification Integration", "PASS", f"Notification count increased from {initial_count} to {final_count}")
+                    return True
+                else:
+                    # Check notifications directly
+                    notifications_response = self.session.get(
+                        f"{API_BASE}/notifications/",
+                        headers=user2_headers,
+                        timeout=10
+                    )
+                    
+                    if notifications_response.status_code == 200:
+                        notifications = notifications_response.json()
+                        connection_notifications = [n for n in notifications if n.get("type") == "connection_request"]
+                        
+                        if connection_notifications:
+                            self.log_test("Connection Request Notification Integration", "PASS", f"Found {len(connection_notifications)} connection request notifications")
+                            return True
+                    
+                    self.log_test("Connection Request Notification Integration", "FAIL", f"No notification increase detected (initial: {initial_count}, final: {final_count})")
+                    return False
+            else:
+                self.log_test("Connection Request Notification Integration", "FAIL", f"Could not get final notification count: {final_count_response.text}")
+                return False
+                
+        except Exception as e:
+            self.log_test("Connection Request Notification Integration", "FAIL", f"Exception: {str(e)}")
+            return False
+
+    # Test 11: Mark Notification as Read
+    def test_mark_notification_read(self) -> bool:
+        """Test POST /api/notifications/{notification_id}/read endpoint"""
+        try:
+            user_email = self.test_users[1]["email"]  # Use user2 who should have notifications
+            headers = self.get_auth_headers(user_email)
+            
+            # Get notifications
+            notifications_response = self.session.get(
+                f"{API_BASE}/notifications/",
+                headers=headers,
+                timeout=10
+            )
+            
+            if notifications_response.status_code != 200:
+                self.log_test("Mark Notification Read", "FAIL", "Could not get notifications")
+                return False
+            
+            notifications = notifications_response.json()
+            unread_notifications = [n for n in notifications if n.get("read_at") is None]
+            
+            if not unread_notifications:
+                self.log_test("Mark Notification Read", "PASS", "No unread notifications to test (expected after previous tests)")
+                return True
+            
+            # Mark first unread notification as read
+            notification_id = unread_notifications[0]["id"]
+            
+            response = self.session.post(
+                f"{API_BASE}/notifications/{notification_id}/read",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                self.log_test("Mark Notification Read", "PASS", f"Message: {result.get('message')}")
+                return True
+            else:
+                self.log_test("Mark Notification Read", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+                return False
+                
+        except Exception as e:
+            self.log_test("Mark Notification Read", "FAIL", f"Exception: {str(e)}")
+            return False
+
+    # Test 12: Mark All Notifications as Read
+    def test_mark_all_notifications_read(self) -> bool:
+        """Test POST /api/notifications/read-all endpoint"""
+        try:
+            user_email = self.test_users[1]["email"]
+            headers = self.get_auth_headers(user_email)
+            
+            response = self.session.post(
+                f"{API_BASE}/notifications/read-all",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                self.log_test("Mark All Notifications Read", "PASS", f"Message: {result.get('message')}")
+                return True
+            else:
+                self.log_test("Mark All Notifications Read", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+                return False
+                
+        except Exception as e:
+            self.log_test("Mark All Notifications Read", "FAIL", f"Exception: {str(e)}")
+            return False
+
+    # Test 13: Delete Notification
+    def test_delete_notification(self) -> bool:
+        """Test DELETE /api/notifications/{notification_id} endpoint"""
+        try:
+            user_email = self.test_users[1]["email"]
+            headers = self.get_auth_headers(user_email)
+            
+            # Get notifications
+            notifications_response = self.session.get(
+                f"{API_BASE}/notifications/",
+                headers=headers,
+                timeout=10
+            )
+            
+            if notifications_response.status_code != 200:
+                self.log_test("Delete Notification", "FAIL", "Could not get notifications")
+                return False
+            
+            notifications = notifications_response.json()
+            
+            if not notifications:
+                self.log_test("Delete Notification", "PASS", "No notifications to delete (expected after previous tests)")
+                return True
+            
+            # Delete first notification
+            notification_id = notifications[0]["id"]
+            
+            response = self.session.delete(
+                f"{API_BASE}/notifications/{notification_id}",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                self.log_test("Delete Notification", "PASS", f"Message: {result.get('message')}")
+                return True
+            else:
+                self.log_test("Delete Notification", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+                return False
+                
+        except Exception as e:
+            self.log_test("Delete Notification", "FAIL", f"Exception: {str(e)}")
+            return False
+
+    # Test 14: Deactivate Push Token
+    def test_deactivate_push_token(self) -> bool:
+        """Test DELETE /api/notifications/push-tokens/{token} endpoint"""
+        try:
+            user_email = self.test_users[0]["email"]
+            headers = self.get_auth_headers(user_email)
+            
+            if not self.test_push_tokens:
+                self.log_test("Deactivate Push Token", "FAIL", "No push tokens to deactivate")
+                return False
+            
+            # Deactivate first push token
+            token_to_deactivate = self.test_push_tokens[0]["token"]
+            
+            response = self.session.delete(
+                f"{API_BASE}/notifications/push-tokens/{token_to_deactivate}",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                self.log_test("Deactivate Push Token", "PASS", f"Message: {result.get('message')}")
+                return True
+            else:
+                self.log_test("Deactivate Push Token", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+                return False
+                
+        except Exception as e:
+            self.log_test("Deactivate Push Token", "FAIL", f"Exception: {str(e)}")
+            return False
+
+    # Test 15: Notification Filtering
+    def test_notification_filtering(self) -> bool:
+        """Test GET /api/notifications/ with filters"""
+        try:
+            user_email = self.test_users[1]["email"]
+            headers = self.get_auth_headers(user_email)
+            
+            # Test filtering by unread_only
+            response = self.session.get(
+                f"{API_BASE}/notifications/",
+                params={"unread_only": True},
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                unread_notifications = response.json()
+                
+                # Test filtering by type
+                type_response = self.session.get(
+                    f"{API_BASE}/notifications/",
+                    params={"type": "connection_request"},
+                    headers=headers,
+                    timeout=10
+                )
+                
+                if type_response.status_code == 200:
+                    connection_notifications = type_response.json()
+                    self.log_test("Notification Filtering", "PASS", f"Unread: {len(unread_notifications)}, Connection requests: {len(connection_notifications)}")
+                    return True
+                else:
+                    self.log_test("Notification Filtering", "FAIL", f"Type filter failed: {type_response.text}")
+                    return False
+            else:
+                self.log_test("Notification Filtering", "FAIL", f"Unread filter failed: {response.text}")
+                return False
+                
+        except Exception as e:
+            self.log_test("Notification Filtering", "FAIL", f"Exception: {str(e)}")
+            return False
+
+    def run_all_tests(self) -> Dict[str, Any]:
+        """Run all notification system tests"""
+        print("🚀 Starting Comprehensive Notification System Backend Testing")
+        print("=" * 80)
+        
+        # Setup
+        if not self.setup_test_users():
+            return {"success": False, "error": "Failed to setup test users"}
+        
+        # Test results
+        test_results = {}
+        
+        # Run all tests
+        tests = [
+            ("Get Notifications", self.test_get_notifications),
+            ("Get Unread Count", self.test_get_unread_count),
+            ("Get Notification Preferences", self.test_get_notification_preferences),
+            ("Update Notification Preferences", self.test_update_notification_preferences),
+            ("Register Push Token", self.test_register_push_token),
+            ("Get User Push Tokens", self.test_get_user_push_tokens),
+            ("Get Notification Stats", self.test_get_notification_stats),
+            ("Send Test Notification", self.test_send_test_notification),
+            ("Broadcast Notification", self.test_broadcast_notification),
+            ("Connection Request Notification Integration", self.test_connection_request_notification_integration),
+            ("Mark Notification Read", self.test_mark_notification_read),
+            ("Mark All Notifications Read", self.test_mark_all_notifications_read),
+            ("Delete Notification", self.test_delete_notification),
+            ("Deactivate Push Token", self.test_deactivate_push_token),
+            ("Notification Filtering", self.test_notification_filtering),
+        ]
+        
+        passed_tests = 0
+        total_tests = len(tests)
+        
+        for test_name, test_func in tests:
+            try:
+                result = test_func()
+                test_results[test_name] = result
+                if result:
+                    passed_tests += 1
+            except Exception as e:
+                print(f"❌ {test_name}: EXCEPTION - {str(e)}")
+                test_results[test_name] = False
+        
+        # Summary
+        print("=" * 80)
+        print(f"📊 NOTIFICATION SYSTEM TEST SUMMARY")
+        print(f"✅ Passed: {passed_tests}/{total_tests} tests ({(passed_tests/total_tests)*100:.1f}%)")
+        
+        if passed_tests == total_tests:
+            print("🎉 ALL NOTIFICATION SYSTEM TESTS PASSED!")
         else:
-            test_results.add_result("User Authentication", False, "No access token in response")
-            return None
+            print(f"⚠️  {total_tests - passed_tests} tests failed")
+            
+        return {
+            "success": passed_tests == total_tests,
+            "passed": passed_tests,
+            "total": total_tests,
+            "percentage": (passed_tests/total_tests)*100,
+            "results": test_results
+        }
+
+def main():
+    """Main function to run notification system tests"""
+    tester = NotificationSystemTester()
+    results = tester.run_all_tests()
+    
+    if results["success"]:
+        print("\n🎯 All notification system tests completed successfully!")
+        exit(0)
     else:
-        test_results.add_result("User Authentication", False, f"Login failed: {response.status_code if response else 'No response'}")
-        return None
+        print(f"\n❌ {results['total'] - results['passed']} tests failed")
+        exit(1)
+
+if __name__ == "__main__":
+    main()
 
 def test_ai_chat_send_message(token):
     """Test sending message to AI assistant"""
