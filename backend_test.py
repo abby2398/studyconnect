@@ -113,29 +113,231 @@ class NotificationSystemTester:
             return {"Authorization": f"Bearer {token}"}
         return {}
 
-def make_request(method, endpoint, data=None, headers=None, params=None):
-    """Make HTTP request with error handling"""
-    try:
-        url = f"{API_BASE}{endpoint}"
-        
-        if method.upper() == 'GET':
-            response = requests.get(url, headers=headers, params=params, timeout=60)
-        elif method.upper() == 'POST':
-            response = requests.post(url, json=data, headers=headers, params=params, timeout=60)
-        elif method.upper() == 'PUT':
-            response = requests.put(url, json=data, headers=headers, params=params, timeout=60)
-        elif method.upper() == 'DELETE':
-            response = requests.delete(url, headers=headers, params=params, timeout=60)
-        else:
-            raise ValueError(f"Unsupported method: {method}")
-        
-        return response
-    except requests.exceptions.Timeout:
-        print(f"Request timed out for {method} {endpoint}")
-        return None
-    except requests.exceptions.RequestException as e:
-        print(f"Request failed: {str(e)}")
-        return None
+    # Test 1: Notification Management - Get Notifications
+    def test_get_notifications(self) -> bool:
+        """Test GET /api/notifications/ endpoint"""
+        try:
+            user_email = self.test_users[0]["email"]
+            headers = self.get_auth_headers(user_email)
+            
+            response = self.session.get(
+                f"{API_BASE}/notifications/",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                notifications = response.json()
+                self.log_test("Get Notifications", "PASS", f"Retrieved {len(notifications)} notifications")
+                return True
+            else:
+                self.log_test("Get Notifications", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+                return False
+                
+        except Exception as e:
+            self.log_test("Get Notifications", "FAIL", f"Exception: {str(e)}")
+            return False
+
+    # Test 2: Notification Management - Get Unread Count
+    def test_get_unread_count(self) -> bool:
+        """Test GET /api/notifications/unread/count endpoint"""
+        try:
+            user_email = self.test_users[0]["email"]
+            headers = self.get_auth_headers(user_email)
+            
+            response = self.session.get(
+                f"{API_BASE}/notifications/unread/count",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                unread_count = data.get("unread_count", 0)
+                self.log_test("Get Unread Count", "PASS", f"Unread count: {unread_count}")
+                return True
+            else:
+                self.log_test("Get Unread Count", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+                return False
+                
+        except Exception as e:
+            self.log_test("Get Unread Count", "FAIL", f"Exception: {str(e)}")
+            return False
+
+    # Test 3: Notification Preferences - Get Preferences
+    def test_get_notification_preferences(self) -> bool:
+        """Test GET /api/notifications/preferences endpoint"""
+        try:
+            user_email = self.test_users[0]["email"]
+            headers = self.get_auth_headers(user_email)
+            
+            response = self.session.get(
+                f"{API_BASE}/notifications/preferences",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                preferences = response.json()
+                self.log_test("Get Notification Preferences", "PASS", f"Retrieved preferences with push_enabled: {preferences.get('push_enabled')}")
+                return True
+            else:
+                self.log_test("Get Notification Preferences", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+                return False
+                
+        except Exception as e:
+            self.log_test("Get Notification Preferences", "FAIL", f"Exception: {str(e)}")
+            return False
+
+    # Test 4: Notification Preferences - Update Preferences
+    def test_update_notification_preferences(self) -> bool:
+        """Test PUT /api/notifications/preferences endpoint"""
+        try:
+            user_email = self.test_users[0]["email"]
+            headers = self.get_auth_headers(user_email)
+            
+            # Update preferences
+            preferences_update = {
+                "push_enabled": True,
+                "push_connection_requests": True,
+                "push_messages": False,
+                "email_enabled": True,
+                "email_connection_requests": True,
+                "quiet_hours_enabled": True,
+                "quiet_hours_start": "22:00",
+                "quiet_hours_end": "08:00"
+            }
+            
+            response = self.session.put(
+                f"{API_BASE}/notifications/preferences",
+                json=preferences_update,
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                updated_preferences = response.json()
+                self.log_test("Update Notification Preferences", "PASS", f"Updated preferences - push_messages: {updated_preferences.get('push_messages')}")
+                return True
+            else:
+                self.log_test("Update Notification Preferences", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+                return False
+                
+        except Exception as e:
+            self.log_test("Update Notification Preferences", "FAIL", f"Exception: {str(e)}")
+            return False
+
+    # Test 5: Push Token Management - Register Push Token
+    def test_register_push_token(self) -> bool:
+        """Test POST /api/notifications/push-tokens endpoint"""
+        try:
+            user_email = self.test_users[0]["email"]
+            headers = self.get_auth_headers(user_email)
+            
+            # Create test push token
+            push_token_data = {
+                "token": f"ExponentPushToken[{str(uuid.uuid4())}]",
+                "device_type": "ios",
+                "device_id": str(uuid.uuid4()),
+                "app_version": "1.0.0"
+            }
+            
+            response = self.session.post(
+                f"{API_BASE}/notifications/push-tokens",
+                json=push_token_data,
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                token_response = response.json()
+                self.test_push_tokens.append(token_response)
+                self.log_test("Register Push Token", "PASS", f"Registered token for device: {token_response.get('device_type')}")
+                return True
+            else:
+                self.log_test("Register Push Token", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+                return False
+                
+        except Exception as e:
+            self.log_test("Register Push Token", "FAIL", f"Exception: {str(e)}")
+            return False
+
+    # Test 6: Push Token Management - Get User Push Tokens
+    def test_get_user_push_tokens(self) -> bool:
+        """Test GET /api/notifications/push-tokens endpoint"""
+        try:
+            user_email = self.test_users[0]["email"]
+            headers = self.get_auth_headers(user_email)
+            
+            response = self.session.get(
+                f"{API_BASE}/notifications/push-tokens",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                tokens = response.json()
+                self.log_test("Get User Push Tokens", "PASS", f"Retrieved {len(tokens)} push tokens")
+                return True
+            else:
+                self.log_test("Get User Push Tokens", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+                return False
+                
+        except Exception as e:
+            self.log_test("Get User Push Tokens", "FAIL", f"Exception: {str(e)}")
+            return False
+
+    # Test 7: Notification Statistics
+    def test_get_notification_stats(self) -> bool:
+        """Test GET /api/notifications/stats endpoint"""
+        try:
+            user_email = self.test_users[0]["email"]
+            headers = self.get_auth_headers(user_email)
+            
+            response = self.session.get(
+                f"{API_BASE}/notifications/stats",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                stats = response.json()
+                total_notifications = stats.get("total_notifications", 0)
+                unread_count = stats.get("unread_count", 0)
+                self.log_test("Get Notification Stats", "PASS", f"Total: {total_notifications}, Unread: {unread_count}")
+                return True
+            else:
+                self.log_test("Get Notification Stats", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+                return False
+                
+        except Exception as e:
+            self.log_test("Get Notification Stats", "FAIL", f"Exception: {str(e)}")
+            return False
+
+    # Test 8: Test Notification Feature
+    def test_send_test_notification(self) -> bool:
+        """Test POST /api/notifications/test endpoint"""
+        try:
+            user_email = self.test_users[0]["email"]
+            headers = self.get_auth_headers(user_email)
+            
+            response = self.session.post(
+                f"{API_BASE}/notifications/test",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                self.log_test("Send Test Notification", "PASS", f"Message: {result.get('message')}")
+                return True
+            else:
+                self.log_test("Send Test Notification", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
+                return False
+                
+        except Exception as e:
+            self.log_test("Send Test Notification", "FAIL", f"Exception: {str(e)}")
+            return False
 
 def test_user_authentication():
     """Test user authentication to get access token"""
