@@ -965,6 +965,10 @@ app.include_router(events_router)
 from ai_routes import ai_router
 app.include_router(ai_router)
 
+# Import and include notifications router
+from notifications_routes import notifications_router
+app.include_router(notifications_router)
+
 # Mount Socket.IO
 app.mount("/socket.io", socketio.ASGIApp(sio))
 
