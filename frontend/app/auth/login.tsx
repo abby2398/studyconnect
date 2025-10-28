@@ -171,41 +171,83 @@ export default function LoginScreen() {
     }
   };
 
+  // const onSubmit = async (data: LoginFormData) => {
+  //   setLoading(true);
+  //   try {
+  //     const response = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/auth/login`, {
+  //       method: 'POST',
+  //       headers: {
+  //         'Content-Type': 'application/json',
+  //       },
+  //       body: JSON.stringify(data),
+  //     });
+
+  //     const result = await response.json();
+
+  //     if (!response.ok) {
+  //       throw new Error(result.detail || 'Login failed');
+  //     }
+
+  //     // Store token and user data
+  //     await AsyncStorage.multiSet([
+  //       ['auth_token', result.access_token],
+  //       ['user_data', JSON.stringify(result.user)],
+  //     ]);
+
+  //     // Navigate to main app
+  //     router.replace('/(tabs)/posts');
+  //   } catch (error) {
+  //     console.error('Login error:', error);
+  //     Alert.alert(
+  //       'Login Error',
+  //       error instanceof Error ? error.message : 'Something went wrong. Please try again.'
+  //     );
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
   const onSubmit = async (data: LoginFormData) => {
-    setLoading(true);
+  setLoading(true);
+  try {
+    const response = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    });
+
+    let result;
+    const text = await response.text(); // Always read as text first
     try {
-      const response = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.detail || 'Login failed');
-      }
-
-      // Store token and user data
-      await AsyncStorage.multiSet([
-        ['auth_token', result.access_token],
-        ['user_data', JSON.stringify(result.user)],
-      ]);
-
-      // Navigate to main app
-      router.replace('/(tabs)/posts');
-    } catch (error) {
-      console.error('Login error:', error);
-      Alert.alert(
-        'Login Error',
-        error instanceof Error ? error.message : 'Something went wrong. Please try again.'
-      );
-    } finally {
-      setLoading(false);
+      result = JSON.parse(text); // Try to parse JSON
+    } catch {
+      result = { detail: text }; // Fallback if not JSON
     }
-  };
+
+    if (!response.ok) {
+      throw new Error(result.detail || 'Login failed');
+    }
+
+    // Store token and user data
+    await AsyncStorage.multiSet([
+      ['auth_token', result.access_token],
+      ['user_data', JSON.stringify(result.user)],
+    ]);
+
+    router.replace('/(tabs)/posts');
+  } catch (error) {
+    console.error('Login error:', error);
+    Alert.alert(
+      'Login Error',
+      error instanceof Error ? error.message : 'Something went wrong. Please try again.'
+    );
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <SafeAreaView style={styles.container}>
