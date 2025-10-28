@@ -397,6 +397,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#ffffff',
   },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   headerButton: {
     padding: 8,
   },
