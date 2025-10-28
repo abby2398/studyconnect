@@ -532,6 +532,14 @@ async def send_connection_request(
     
     await db.connection_requests.insert_one(connection_request.dict())
     
+    # Send notification
+    try:
+        from notifications_service import send_connection_request_notification
+        await send_connection_request_notification(current_user.id, to_user_id)
+    except Exception as e:
+        print(f"Error sending connection request notification: {str(e)}")
+        # Don't fail the connection request if notification fails
+    
     return {"message": "Connection request sent successfully"}
 
 @api_router.get("/connections/requests")
