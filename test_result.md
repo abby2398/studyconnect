@@ -351,7 +351,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Events System"
+    - "Comprehensive Notification System"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
