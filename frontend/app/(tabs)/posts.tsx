@@ -484,7 +484,7 @@ export default function PostsScreen() {
         <View style={styles.headerActions}>
           <TouchableOpacity 
             style={styles.headerButton}
-            onPress={() => router.push('/ai/assistant')}
+            onPress={() => router.push('/ai-assistant')}
           >
             <Ionicons name="bulb-outline" size={24} color="#6c5ce7" />
           </TouchableOpacity>
