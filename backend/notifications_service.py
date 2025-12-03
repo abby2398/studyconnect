@@ -52,10 +52,9 @@ class NotificationService:
                 return None
             
             # Create notification record
-            notification = Notification(
-                **notification_data.dict(),
-                channels=allowed_channels
-            )
+            notification_dict = notification_data.dict()
+            notification_dict['channels'] = allowed_channels
+            notification = Notification(**notification_dict)
             
             # Store in database
             await db.notifications.insert_one(notification.dict())
