@@ -484,24 +484,39 @@ class GoogleOAuthTester:
 
     # Test 10: OAuth User Search Visibility
     def test_oauth_user_search_visibility(self) -> bool:
-        """Test that OAuth users appear in user search"""
+        """Test that OAuth users appear in user search when searched by other users"""
         try:
-            # Create OAuth user with searchable profile
-            oauth_data = self.create_mock_google_data("search.oauth@columbia.edu", "Search OAuth User")
+            # Create first OAuth user with searchable profile
+            oauth_data1 = self.create_mock_google_data("search.oauth1@columbia.edu", "Search OAuth User 1")
             
-            response = self.session.post(
+            response1 = self.session.post(
                 f"{API_BASE}/auth/google-oauth",
-                json=oauth_data,
+                json=oauth_data1,
                 headers={"Content-Type": "application/json"},
                 timeout=10
             )
             
-            if response.status_code == 200:
-                data = response.json()
-                token = data["access_token"]
-                headers = {"Authorization": f"Bearer {token}"}
+            # Create second OAuth user to perform the search
+            oauth_data2 = self.create_mock_google_data("search.oauth2@yale.edu", "Search OAuth User 2")
+            
+            response2 = self.session.post(
+                f"{API_BASE}/auth/google-oauth",
+                json=oauth_data2,
+                headers={"Content-Type": "application/json"},
+                timeout=10
+            )
+            
+            if response1.status_code == 200 and response2.status_code == 200:
+                data1 = response1.json()
+                data2 = response2.json()
                 
-                # Update profile with searchable data
+                token1 = data1["access_token"]
+                token2 = data2["access_token"]
+                
+                headers1 = {"Authorization": f"Bearer {token1}"}
+                headers2 = {"Authorization": f"Bearer {token2}"}
+                
+                # Update first user's profile with searchable data
                 profile_update = {
                     "profile": {
                         "university": "Columbia University",
@@ -514,16 +529,16 @@ class GoogleOAuthTester:
                 update_response = self.session.put(
                     f"{API_BASE}/users/me",
                     json=profile_update,
-                    headers=headers,
+                    headers=headers1,
                     timeout=10
                 )
                 
                 if update_response.status_code == 200:
-                    # Search for users by university
+                    # Search for users by university using second user's token
                     search_response = self.session.get(
                         f"{API_BASE}/users/search",
                         params={"university": "Columbia"},
-                        headers=headers,
+                        headers=headers2,  # Use second user's token
                         timeout=10
                     )
                     
@@ -531,19 +546,19 @@ class GoogleOAuthTester:
                         search_data = search_response.json()
                         users = search_data.get("users", [])
                         
-                        # Check if OAuth user appears in search results
+                        # Check if first OAuth user appears in search results when searched by second user
                         oauth_user_found = any(
-                            user["email"] == oauth_data["google_data"]["email"] 
+                            user["email"] == oauth_data1["google_data"]["email"] 
                             for user in users
                         )
                         
                         if oauth_user_found:
                             self.log_test("OAuth User Search Visibility", "PASS",
-                                        "OAuth users appear in search results")
+                                        "OAuth users appear in search results when searched by other users")
                             return True
                         else:
                             self.log_test("OAuth User Search Visibility", "FAIL",
-                                        "OAuth user not found in search results")
+                                        f"OAuth user not found in search results. Found {len(users)} users")
                             return False
                     else:
                         self.log_test("OAuth User Search Visibility", "FAIL",
@@ -555,7 +570,7 @@ class GoogleOAuthTester:
                     return False
             else:
                 self.log_test("OAuth User Search Visibility", "FAIL",
-                            f"OAuth user creation failed: {response.status_code}")
+                            f"OAuth user creation failed: {response1.status_code}, {response2.status_code}")
                 return False
                 
         except Exception as e:
