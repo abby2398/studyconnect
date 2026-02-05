@@ -276,6 +276,18 @@ backend:
         agent: "testing"
         comment: "✅ PUSH NOTIFICATION INTEGRATION TESTING COMPLETE: 5/5 tests passed (100% success rate). ALL PUSH NOTIFICATION INTEGRATION WORKING PERFECTLY: ✅ Push Token Registration - POST /api/notifications/push-tokens registers device tokens correctly, GET /api/notifications/push-tokens retrieves user tokens, DELETE /api/notifications/push-tokens/{token} deactivates tokens successfully. ✅ Connection Request Notifications - POST /api/connections/request triggers send_connection_request_notification correctly with proper sender info, POST /api/connections/respond with action=accept triggers send_connection_accepted_notification to original requester. ✅ Message Notifications - POST /api/chat/messages triggers send_message_notification correctly for both text and media messages, notifications contain proper sender info and message previews. ✅ Notification Service Integration - Test notifications work correctly, notification preferences management functional, notification statistics working, notification templates applied correctly. ✅ Error Handling - Core functionality (connections, messages) works correctly regardless of notification failures, notifications don't break primary features. Push notification integration is fully operational and ready for production use."
 
+  - task: "Forgot Password / Password Reset System"
+    implemented: true
+    working: "NA"
+    file: "password_reset_routes.py, password_reset_service.py, password_reset_models.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Implemented forgot password/password reset system with mock mode for testing (no SendGrid API key). Features include: POST /api/auth/forgot-password to request reset, GET /api/auth/verify-reset-token/{token} to verify token validity, POST /api/auth/reset-password to reset password with new one. Mock mode returns reset_token directly in response for immediate testing without email. Includes rate limiting (3 attempts per 24 hours, 5 minute cooldown), secure token hashing, and token expiration (1 hour)."
+
 frontend:
   - task: "Basic Expo Setup"
     implemented: true
