@@ -87,3 +87,7 @@ android-sdk/ -e
 *.env.*
 studyconnect.zip
 model.patch
+-e 
+# Environment files
+*.env
+*.env.*
