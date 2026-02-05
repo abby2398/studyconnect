@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 
 # Get backend URL from environment
-BACKEND_URL = os.environ.get('EXPO_PUBLIC_BACKEND_URL', 'https://campuslink-25.preview.emergentagent.com')
+BACKEND_URL = os.environ.get('EXPO_PUBLIC_BACKEND_URL', 'https://password-reset-39.preview.emergentagent.com')
 API_BASE = f"{BACKEND_URL}/api"
 
 class GoogleOAuthTester:

@@ -6,7 +6,7 @@ Script to verify test users for posts testing
 import requests
 import json
 
-BASE_URL = "https://campuslink-25.preview.emergentagent.com/api"
+BASE_URL = "https://password-reset-39.preview.emergentagent.com/api"
 
 def verify_user(token, user_name):
     """Verify a user with the given token"""
