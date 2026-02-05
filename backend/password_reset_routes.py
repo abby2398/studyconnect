@@ -36,10 +36,17 @@ async def forgot_password(
             # Schedule cleanup of expired tokens in background
             background_tasks.add_task(password_reset_service.cleanup_expired_tokens)
             
-            return PasswordResetResponse(
-                message=result["message"],
-                reset_token_id=result.get("token_id")
-            )
+            response_data = {
+                "message": result["message"],
+                "reset_token_id": result.get("token_id")
+            }
+            
+            # Include reset token in mock mode for testing
+            if result.get("mock_mode"):
+                response_data["mock_mode"] = True
+                response_data["reset_token"] = result.get("reset_token")
+            
+            return response_data
         else:
             raise HTTPException(
                 status_code=400 if "Too many" in result["message"] or "wait" in result["message"] else 500,
