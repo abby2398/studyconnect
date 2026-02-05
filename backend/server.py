@@ -1003,6 +1003,10 @@ app.include_router(ai_router)
 from notifications_routes import notifications_router
 app.include_router(notifications_router)
 
+# Import and include password reset router
+from password_reset_routes import password_router
+app.include_router(password_router)
+
 # Mount Socket.IO
 app.mount("/socket.io", socketio.ASGIApp(sio))
 
