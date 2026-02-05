@@ -449,43 +449,39 @@ class BackendTester:
         print("⚠️ Testing Notification Error Handling...")
         
         try:
-            user1 = self.test_users[0]
-            user2 = self.test_users[1]
+            # Create fresh users for this test to avoid conflicts with previous tests
+            user3_data = await self.create_test_user("charlie.brown@university.edu", "Charlie", "Brown")
+            user4_data = await self.create_test_user("diana.prince@college.edu", "Diana", "Prince")
             
             # Test 1: Ensure connection requests work even if notifications fail
-            # (We can't easily simulate notification failures, but we can verify core functionality)
-            
             # Send connection request
-            async with await self.make_authenticated_request("POST", "/connections/request", user1["token"], params={"to_user_id": user2["user"]["id"]}) as resp:
-                if resp.status == 400:
-                    # Request might already exist, that's fine for this test
-                    pass
-                elif resp.status != 200:
+            async with await self.make_authenticated_request("POST", "/connections/request", user3_data["token"], params={"to_user_id": user4_data["user"]["id"]}) as resp:
+                if resp.status != 200:
                     return {"success": False, "error": f"Connection request failed: {await resp.text()}"}
             
-            # Verify connection request exists (either created now or already existed)
-            async with await self.make_authenticated_request("GET", "/connections/requests", user2["token"]) as resp:
+            # Verify connection request was created
+            async with await self.make_authenticated_request("GET", "/connections/requests", user4_data["token"]) as resp:
                 if resp.status != 200:
                     return {"success": False, "error": f"Failed to get connection requests: {await resp.text()}"}
                 requests_data = await resp.json()
                 
-                # Should have at least one incoming request (either new or existing)
-                has_request_from_user1 = any(
-                    req["from_user_id"] == user1["user"]["id"] 
+                # Should have the incoming request from user3
+                has_request_from_user3 = any(
+                    req["from_user_id"] == user3_data["user"]["id"] 
                     for req in requests_data.get("incoming", [])
                 )
                 
-                if not has_request_from_user1:
-                    return {"success": False, "error": "No connection request found from user1 to user2"}
+                if not has_request_from_user3:
+                    return {"success": False, "error": "Connection request not created properly"}
             
             # Test 2: Ensure messages work even if notifications fail
-            # Create conversation if not exists
+            # Create conversation
             conversation_data = {
-                "participants": [user1["user"]["id"], user2["user"]["id"]],
+                "participants": [user3_data["user"]["id"], user4_data["user"]["id"]],
                 "is_group_chat": False
             }
             
-            async with await self.make_authenticated_request("POST", "/chat/conversations", user1["token"], json=conversation_data) as resp:
+            async with await self.make_authenticated_request("POST", "/chat/conversations", user3_data["token"], json=conversation_data) as resp:
                 if resp.status != 200:
                     return {"success": False, "error": f"Failed to create conversation: {await resp.text()}"}
                 conversation = await resp.json()
@@ -498,12 +494,12 @@ class BackendTester:
                 "content": "Test message for error handling verification"
             }
             
-            async with await self.make_authenticated_request("POST", "/chat/messages", user1["token"], json=message_data) as resp:
+            async with await self.make_authenticated_request("POST", "/chat/messages", user3_data["token"], json=message_data) as resp:
                 if resp.status != 200:
                     return {"success": False, "error": f"Failed to send message: {await resp.text()}"}
             
             # Verify message was created regardless of notification status
-            async with await self.make_authenticated_request("GET", f"/chat/messages/{conversation_id}", user2["token"]) as resp:
+            async with await self.make_authenticated_request("GET", f"/chat/messages/{conversation_id}", user4_data["token"]) as resp:
                 if resp.status != 200:
                     return {"success": False, "error": f"Failed to get messages: {await resp.text()}"}
                 messages = await resp.json()
