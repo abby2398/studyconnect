@@ -24,11 +24,14 @@ export default function RootLayout() {
           animation: 'slide_from_right',
         }}
       >
-        <Stack.Screen name="index" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="auth/welcome" />
-        <Stack.Screen name="auth/login" />
-        <Stack.Screen name="auth/register" />
+        <Stack.Screen name="index" options={{ gestureEnabled: false }} />
+        <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />
+        <Stack.Screen name="auth/welcome" options={{ gestureEnabled: false }} />
+        <Stack.Screen name="auth/login" options={{ gestureEnabled: false }} />
+        <Stack.Screen name="auth/register" options={{ gestureEnabled: false }} />
+        <Stack.Screen name="auth/forgot-password" />
+        <Stack.Screen name="auth/reset-password" />
+        <Stack.Screen name="auth/callback" options={{ gestureEnabled: false }} />
         <Stack.Screen name="profile/edit" />
         <Stack.Screen name="connections/index" />
         <Stack.Screen name="ai-assistant" />
@@ -37,6 +40,7 @@ export default function RootLayout() {
         <Stack.Screen name="events/[id]" />
         <Stack.Screen name="posts/create" />
         <Stack.Screen name="posts/[id]/comments" />
+        <Stack.Screen name="posts/edit/[id]" />
         <Stack.Screen name="users/profile/[id]" />
         <Stack.Screen name="chat/conversation/[id]" />
       </Stack>
