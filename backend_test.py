@@ -338,12 +338,42 @@ class PasswordResetTester:
             
     async def test_password_validation(self):
         """Test password validation (minimum 8 characters)"""
-        # Need a fresh token for this test
-        await self.test_forgot_password_existing_user()
-            
         try:
+            # Create a new user for password validation test
+            import time
+            timestamp = str(int(time.time()))
+            validation_email = f"validation{timestamp}@university.edu"
+            
+            # Register the user first
+            user_data = {
+                "email": validation_email,
+                "password": "TestPassword123",
+                "first_name": "Validation",
+                "last_name": "Test"
+            }
+            
+            async with self.session.post(f"{API_BASE}/auth/register", json=user_data) as response:
+                if response.status != 200:
+                    self.log_test("Password Validation Setup", False, "Failed to register user for validation test")
+                    return False
+            
+            # Get a fresh token
+            request_data = {"email": validation_email}
+            async with self.session.post(f"{API_BASE}/auth/forgot-password", json=request_data) as response:
+                if response.status != 200:
+                    self.log_test("Password Validation Setup", False, "Failed to get reset token")
+                    return False
+                
+                response_data = await response.json()
+                validation_token = response_data.get("reset_token")
+                
+                if not validation_token:
+                    self.log_test("Password Validation Setup", False, "No reset token in response")
+                    return False
+            
+            # Test with short password
             reset_data = {
-                "token": self.reset_token,
+                "token": validation_token,
                 "new_password": "short"  # Too short
             }
             
