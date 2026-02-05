@@ -18,7 +18,15 @@ from password_reset_models import (
     generate_reset_token, verify_reset_token,
     RESET_TOKEN_EXPIRY_HOURS, MAX_RESET_ATTEMPTS_PER_DAY, RESET_COOLDOWN_MINUTES
 )
-from server import db, pwd_context
+import motor.motor_asyncio
+from passlib.context import CryptContext
+
+# MongoDB connection
+client = motor.motor_asyncio.AsyncIOMotorClient(os.getenv("MONGO_URL", "mongodb://localhost:27017"))
+db = client[os.getenv("DB_NAME", "test_database")]
+
+# Password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
