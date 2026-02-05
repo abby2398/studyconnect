@@ -615,6 +615,17 @@ async def respond_to_request(
                 is_group_chat=False
             )
             await db.conversations.insert_one(conversation.dict())
+        
+        # Send notification if accepted
+        try:
+            from notifications_service import send_connection_accepted_notification
+            await send_connection_accepted_notification(
+                sender_id=current_user.id,
+                recipient_id=request_doc["from_user_id"]
+            )
+        except Exception as e:
+            print(f"Error sending connection accepted notification: {str(e)}")
+            # Don't fail the connection response if notification fails
     
     return {"message": f"Connection request {new_status}"}
 
