@@ -69,11 +69,13 @@ export default function ForgotPasswordScreen() {
       const result = await response.json();
 
       if (response.ok) {
-        setEmailSent(true);
-        setSentEmail(data.email);
-        // In mock mode, save the reset token for testing
+        // In mock mode, directly redirect to reset password page with token
         if (result.mock_mode && result.reset_token) {
-          setMockToken(result.reset_token);
+          router.push(`/auth/reset-password?token=${result.reset_token}`);
+        } else {
+          // Production mode - show email sent confirmation
+          setEmailSent(true);
+          setSentEmail(data.email);
         }
       } else {
         Alert.alert('Error', result.detail || 'Failed to send reset email');
