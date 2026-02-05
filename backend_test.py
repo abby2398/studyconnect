@@ -137,10 +137,25 @@ class PasswordResetTester:
     async def test_rate_limiting(self):
         """Test rate limiting - 5 minute cooldown between requests"""
         try:
-            # First request
+            # Create a user for rate limiting test
             import time
             timestamp = str(int(time.time()))
             rate_limit_email = f"ratelimit{timestamp}@university.edu"
+            
+            # Register the user first
+            user_data = {
+                "email": rate_limit_email,
+                "password": "TestPassword123",
+                "first_name": "RateLimit",
+                "last_name": "Test"
+            }
+            
+            async with self.session.post(f"{API_BASE}/auth/register", json=user_data) as response:
+                if response.status != 200:
+                    self.log_test("Rate Limiting Setup", False, "Failed to register user for rate limit test")
+                    return False
+            
+            # First request
             request_data = {"email": rate_limit_email}
             
             async with self.session.post(f"{API_BASE}/auth/forgot-password", json=request_data) as response:
