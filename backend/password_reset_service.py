@@ -88,11 +88,17 @@ class PasswordResetService:
             
             if email_sent:
                 logger.info(f"Password reset email sent to {email}")
-                return {
+                response = {
                     "success": True,
                     "message": "Password reset link has been sent to your email address.",
                     "token_id": reset_token.id  # For tracking
                 }
+                # In mock mode (no SendGrid configured), return the token for testing
+                if not self.sendgrid_api_key:
+                    response["mock_mode"] = True
+                    response["reset_token"] = token  # Include token for testing
+                    response["message"] = "MOCK MODE: Use the reset_token below to test password reset."
+                return response
             else:
                 # Clean up token if email failed
                 await db.password_reset_tokens.delete_one({"id": reset_token.id})
