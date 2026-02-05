@@ -71,6 +71,10 @@ export default function ForgotPasswordScreen() {
       if (response.ok) {
         setEmailSent(true);
         setSentEmail(data.email);
+        // In mock mode, save the reset token for testing
+        if (result.mock_mode && result.reset_token) {
+          setMockToken(result.reset_token);
+        }
       } else {
         Alert.alert('Error', result.detail || 'Failed to send reset email');
       }
