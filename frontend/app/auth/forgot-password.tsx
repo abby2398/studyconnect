@@ -37,7 +37,6 @@ export default function ForgotPasswordScreen() {
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [sentEmail, setSentEmail] = useState('');
-  const [mockToken, setMockToken] = useState<string | null>(null);
   const router = useRouter();
 
   const {
