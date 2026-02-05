@@ -71,11 +71,14 @@ export default function LoginScreen() {
     setGoogleLoading(true);
     
     try {
-      // Redirect URL should be the main app route (posts feed)
-      const redirectUrl = `${process.env.EXPO_PUBLIC_BACKEND_URL}/auth/callback`;
+      // Get the base URL for the app
+      const baseUrl = process.env.EXPO_PUBLIC_BACKEND_URL?.replace('/api', '') || '';
+      // Redirect URL should be the frontend callback page
+      const redirectUrl = `${baseUrl}/auth/callback`;
       const authUrl = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
       
       console.log('Opening Google OAuth URL:', authUrl);
+      console.log('Redirect URL:', redirectUrl);
       
       // Open the OAuth URL in browser
       const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
