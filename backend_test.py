@@ -209,8 +209,7 @@ class BackendTester:
                 user1_initial_count = (await resp.json())["unread_count"]
             
             # Accept the connection request
-            accept_data = {"request_id": request_id, "action": "accept"}
-            async with await self.make_authenticated_request("POST", "/connections/respond", user1["token"], json=accept_data) as resp:
+            async with await self.make_authenticated_request("POST", "/connections/respond", user2["token"], params={"request_id": request_id, "action": "accept"}) as resp:
                 if resp.status != 200:
                     return {"success": False, "error": f"Failed to accept connection request: {await resp.text()}"}
             
