@@ -743,6 +743,21 @@ async def send_message(
         }
     )
     
+    # Send push notifications to other participants
+    try:
+        other_participants = [p for p in conversation["participants"] if p != current_user.id]
+        
+        for recipient_id in other_participants:
+            from notifications_service import send_message_notification
+            await send_message_notification(
+                sender_id=current_user.id,
+                recipient_id=recipient_id,
+                message_preview=message.content[:50] if message.content else "Sent a file"
+            )
+    except Exception as e:
+        print(f"Error sending message notification: {str(e)}")
+        # Don't fail message sending if notification fails
+    
     return message
 
 @api_router.get("/chat/messages/{conversation_id}", response_model=List[Message])
