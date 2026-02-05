@@ -34,9 +34,14 @@ class BackendTester:
     async def create_test_user(self, email: str, first_name: str, last_name: str) -> Dict[str, Any]:
         """Create a test user and return user data with token"""
         try:
+            # Add timestamp to make email unique
+            import time
+            timestamp = str(int(time.time()))
+            unique_email = email.replace('@', f'+{timestamp}@')
+            
             # Register user
             register_data = {
-                "email": email,
+                "email": unique_email,
                 "password": "TestPass123!",
                 "first_name": first_name,
                 "last_name": last_name
@@ -45,7 +50,7 @@ class BackendTester:
             async with self.session.post(f"{API_BASE}/auth/register", json=register_data) as resp:
                 if resp.status == 400:
                     # User might already exist, try to login
-                    login_data = {"email": email, "password": "TestPass123!"}
+                    login_data = {"email": unique_email, "password": "TestPass123!"}
                     async with self.session.post(f"{API_BASE}/auth/login", json=login_data) as login_resp:
                         if login_resp.status == 200:
                             login_result = await login_resp.json()
@@ -59,7 +64,7 @@ class BackendTester:
                     raise Exception(f"Failed to register user: {await resp.text()}")
             
             # Login to get token
-            login_data = {"email": email, "password": "TestPass123!"}
+            login_data = {"email": unique_email, "password": "TestPass123!"}
             async with self.session.post(f"{API_BASE}/auth/login", json=login_data) as resp:
                 if resp.status != 200:
                     raise Exception(f"Failed to login: {await resp.text()}")
