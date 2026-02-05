@@ -117,23 +117,23 @@ class PasswordResetService:
     async def reset_password(self, token: str, new_password: str) -> dict:
         """Reset password using token"""
         try:
-            # Find token record
-            token_doc = await db.password_reset_tokens.find_one({
+            # Find all unused, non-expired token records
+            token_docs = await db.password_reset_tokens.find({
                 "is_used": False,
                 "expires_at": {"$gt": datetime.utcnow()}
-            })
+            }).to_list(100)
+            
+            # Find the matching token by verifying hash
+            token_doc = None
+            for doc in token_docs:
+                if verify_reset_token(token, doc["token_hash"]):
+                    token_doc = doc
+                    break
             
             if not token_doc:
                 return {
                     "success": False,
                     "message": "Invalid or expired reset token."
-                }
-            
-            # Verify token hash
-            if not verify_reset_token(token, token_doc["token_hash"]):
-                return {
-                    "success": False,
-                    "message": "Invalid reset token."
                 }
             
             # Find user
