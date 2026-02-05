@@ -381,7 +381,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Push Notification Integration for Messages and Connection Requests"
+    - "Forgot Password / Password Reset System"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
