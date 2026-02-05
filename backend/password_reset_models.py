@@ -33,6 +33,8 @@ class PasswordResetConfirm(BaseModel):
 class PasswordResetResponse(BaseModel):
     message: str
     reset_token_id: Optional[str] = None  # For tracking purposes
+    mock_mode: Optional[bool] = None  # For testing mode
+    reset_token: Optional[str] = None  # For testing mode only
 
 def generate_reset_token() -> tuple[str, str]:
     """Generate a secure reset token and its hash"""
