@@ -138,7 +138,10 @@ class PasswordResetTester:
         """Test rate limiting - 5 minute cooldown between requests"""
         try:
             # First request
-            request_data = {"email": "ratelimit@university.edu"}
+            import time
+            timestamp = str(int(time.time()))
+            rate_limit_email = f"ratelimit{timestamp}@university.edu"
+            request_data = {"email": rate_limit_email}
             
             async with self.session.post(f"{API_BASE}/auth/forgot-password", json=request_data) as response:
                 if response.status != 200:
