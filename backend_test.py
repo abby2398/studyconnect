@@ -18,7 +18,9 @@ API_BASE = f"{BACKEND_URL}/api"
 class PasswordResetTester:
     def __init__(self):
         self.session = None
-        self.test_user_email = "testuser@university.edu"
+        import time
+        timestamp = str(int(time.time()))
+        self.test_user_email = f"testuser{timestamp}@university.edu"
         self.test_user_password = "TestPassword123"
         self.new_password = "NewPassword456"
         self.reset_token = None
