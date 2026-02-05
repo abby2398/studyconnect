@@ -1,8 +1,19 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { pushNotificationService } from './services/PushNotificationService';
 
 export default function RootLayout() {
+  useEffect(() => {
+    // Initialize push notifications when app starts
+    pushNotificationService.initialize();
+
+    // Cleanup on app unmount
+    return () => {
+      pushNotificationService.cleanup();
+    };
+  }, []);
+
   return (
     <>
       <StatusBar style="light" backgroundColor="#1a1a2e" />
@@ -21,12 +32,13 @@ export default function RootLayout() {
         <Stack.Screen name="profile/edit" />
         <Stack.Screen name="connections/index" />
         <Stack.Screen name="ai-assistant" />
+        <Stack.Screen name="notifications" />
         <Stack.Screen name="events/create" />
         <Stack.Screen name="events/[id]" />
-        <Stack.Screen name="posts/CreatePost" />
-        <Stack.Screen name="posts/[id]/index" />
+        <Stack.Screen name="posts/create" />
         <Stack.Screen name="posts/[id]/comments" />
         <Stack.Screen name="users/profile/[id]" />
+        <Stack.Screen name="chat/conversation/[id]" />
       </Stack>
     </>
   );
