@@ -463,15 +463,20 @@ class BackendTester:
                 elif resp.status != 200:
                     return {"success": False, "error": f"Connection request failed: {await resp.text()}"}
             
-            # Verify connection request was created regardless of notification status
+            # Verify connection request exists (either created now or already existed)
             async with await self.make_authenticated_request("GET", "/connections/requests", user2["token"]) as resp:
                 if resp.status != 200:
                     return {"success": False, "error": f"Failed to get connection requests: {await resp.text()}"}
                 requests_data = await resp.json()
                 
-                # Should have at least one incoming request
-                if not requests_data.get("incoming"):
-                    return {"success": False, "error": "Connection request not created"}
+                # Should have at least one incoming request (either new or existing)
+                has_request_from_user1 = any(
+                    req["from_user_id"] == user1["user"]["id"] 
+                    for req in requests_data.get("incoming", [])
+                )
+                
+                if not has_request_from_user1:
+                    return {"success": False, "error": "No connection request found from user1 to user2"}
             
             # Test 2: Ensure messages work even if notifications fail
             # Create conversation if not exists
