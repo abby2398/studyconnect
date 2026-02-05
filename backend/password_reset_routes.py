@@ -45,8 +45,6 @@ async def forgot_password(
             if result.get("mock_mode"):
                 response_data["mock_mode"] = True
                 response_data["reset_token"] = result.get("reset_token")
-                print(f"DEBUG: Mock mode result: {result}")
-                print(f"DEBUG: Response data: {response_data}")
             
             return response_data
         else:
